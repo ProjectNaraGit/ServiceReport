@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
+import IndonesiaMapReal from "../../components/IndonesiaMapReal";
 
 type Report = {
   id: number;
@@ -52,17 +53,14 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Overview</p>
-              <h2 className="mt-2 text-2xl font-semibold text-slate-900">Peta Penugasan</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">Peta Mitra</h2>
             </div>
             <button className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-600">
               Lihat Maps
             </button>
           </div>
-          <div className="mt-4 h-64 rounded-2xl bg-gradient-to-br from-slate-200 to-slate-50 text-center text-slate-400">
-            <div className="flex h-full flex-col items-center justify-center">
-              <span className="text-lg font-medium">Maps Placeholder</span>
-              <span className="text-sm">Integrasikan dengan Google Maps / Mapbox</span>
-            </div>
+          <div className="mt-4 flex items-center justify-center">
+            <IndonesiaMapReal />
           </div>
         </div>
 
