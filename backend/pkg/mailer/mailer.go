@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/smtp"
@@ -10,6 +11,15 @@ import (
 // Mailer abstracts sending email notifications.
 type Mailer interface {
 	Send(to, subject, body string) error
+}
+
+func extractAddress(from string) string {
+	start := strings.Index(from, "<")
+	end := strings.Index(from, ">")
+	if start >= 0 && end > start {
+		return strings.TrimSpace(from[start+1 : end])
+	}
+	return strings.TrimSpace(from)
 }
 
 // Config holds SMTP configuration.
@@ -37,10 +47,54 @@ type smtpMailer struct {
 func (m *smtpMailer) Send(to, subject, body string) error {
 	addr := fmt.Sprintf("%s:%d", m.cfg.Host, m.cfg.Port)
 	auth := smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
+	fromAddr := extractAddress(m.cfg.From)
 
 	msg := buildMessage(m.cfg.From, to, subject, body)
 	log.Printf("mailer: sending \"%s\" to %s", subject, to)
-	return smtp.SendMail(addr, auth, m.cfg.From, []string{to}, []byte(msg))
+
+	if m.cfg.Port == 465 {
+		return m.sendImplicitTLS(addr, auth, fromAddr, to, msg)
+	}
+
+	return smtp.SendMail(addr, auth, fromAddr, []string{to}, []byte(msg))
+}
+
+func (m *smtpMailer) sendImplicitTLS(addr string, auth smtp.Auth, from, to, msg string) error {
+	tlsConfig := &tls.Config{ServerName: m.cfg.Host}
+	conn, err := tls.Dial("tcp", addr, tlsConfig)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, m.cfg.Host)
+	if err != nil {
+		return err
+	}
+	defer client.Quit()
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	if err := client.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(msg)); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 type noopMailer struct{}

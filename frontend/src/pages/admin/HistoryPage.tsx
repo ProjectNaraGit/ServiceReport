@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { QrCode } from "lucide-react";
 import { api } from "../../lib/api";
 
 interface ReportHistory {
@@ -10,6 +12,7 @@ interface ReportHistory {
 }
 
 export default function HistoryPage() {
+  const navigate = useNavigate();
   const [histories, setHistories] = useState<ReportHistory[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,39 +34,50 @@ export default function HistoryPage() {
       </div>
       <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
         <div className="overflow-hidden rounded-2xl border border-slate-200">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+          <table className="w-full table-fixed text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="p-4">Dispatch No</th>
-                <th className="p-4">Date</th>
-                <th className="p-4">Customer</th>
-                <th className="p-4">Status</th>
+                <th className="w-[26%] px-4 py-3 text-left">Dispatch No</th>
+                <th className="w-[18%] px-4 py-3 text-left">Date</th>
+                <th className="w-[24%] px-4 py-3 text-left">Customer</th>
+                <th className="w-[16%] px-4 py-3 text-left">Status</th>
+                <th className="w-[16%] px-4 py-3 text-left">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={4} className="p-6 text-center text-slate-500">
+                  <td colSpan={5} className="p-6 text-center text-slate-500">
                     Loading history...
                   </td>
                 </tr>
               )}
               {!loading && histories.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-6 text-center text-slate-500">
+                  <td colSpan={5} className="p-6 text-center text-slate-500">
                     No completed reports yet.
                   </td>
                 </tr>
               )}
               {histories.map((report) => (
-                <tr key={report.id} className="border-t border-slate-100">
-                  <td className="p-4 font-semibold text-slate-900">{report.dispatch_no}</td>
-                  <td className="p-4 text-slate-500">{new Date(report.updated_at).toLocaleDateString()}</td>
-                  <td className="p-4 text-slate-700">{report.customer_name}</td>
-                  <td className="p-4">
-                    <span className="rounded-full bg-emerald-100 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                      {report.status}
+                <tr key={report.id} className="border-t border-slate-100 bg-white odd:bg-white even:bg-slate-50">
+                  <td className="px-4 py-3 font-semibold text-slate-900">{report.dispatch_no}</td>
+                  <td className="px-4 py-3 text-slate-700">{new Date(report.updated_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                  <td className="px-4 py-3 text-slate-700">{report.customer_name}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-full px-3 py-1 text-[11px] font-semibold bg-emerald-100 text-emerald-700">
+                      DONE
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/teknisi/reports/${report.id}`)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300"
+                    >
+                      <QrCode className="h-4 w-4" />
+                      Detail
+                    </button>
                   </td>
                 </tr>
               ))}

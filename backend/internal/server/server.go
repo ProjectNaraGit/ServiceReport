@@ -97,8 +97,10 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	partnersView.DELETE("/:id", partnerHandler.Delete)
 
 	teknisi := protected.Group("/teknisi")
-	teknisi.Use(middleware.RoleGuard(user.RoleTeknisi))
+	teknisi.Use(middleware.RoleGuard(user.RoleTeknisi, user.RoleAdmin, user.RoleMasterAdmin))
 	teknisi.GET("/reports", reportHandler.ListAssigned)
+	teknisi.GET("/reports/:id", reportHandler.TechnicianDetail)
+	teknisi.PATCH("/reports/:id/form", reportHandler.SaveTechnicianForm)
 	teknisi.PATCH("/reports/:id/progress", reportHandler.UpdateProgress)
 
 	r.GET("/healthz", func(c *gin.Context) {

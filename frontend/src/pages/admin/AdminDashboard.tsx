@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, QrCode, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import IndonesiaMapReal from "../../components/IndonesiaMapReal";
 import type { ProvinceWithPartners, PartnerLocation } from "../../types/partners";
@@ -12,10 +13,16 @@ type Report = {
   customer_name: string;
   customer_address: string;
   status: "open" | "progress" | "done";
+  dispatch_date?: string;
   teknisi_id?: number;
+  form_payload?: {
+    dispatchDate?: string;
+    notifOpen?: string;
+  };
 };
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [isMapFocused, setIsMapFocused] = useState(false);
@@ -375,47 +382,74 @@ export default function AdminDashboard() {
       <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Latest Dispatches</h3>
-            <p className="text-sm text-slate-500">Monitor daily status</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Service Report</p>
+            <h3 className="text-lg font-semibold text-slate-900">Assigned Reports</h3>
           </div>
         </div>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+        <div className="mt-4 overflow-hidden rounded-3xl border border-slate-100 bg-white/95 shadow-sm">
+          <table className="w-full table-fixed border-collapse text-sm text-slate-800">
+            <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="p-4">Dispatch No</th>
-                <th className="p-4">Customer</th>
-                <th className="p-4">Address</th>
-                <th className="p-4">Status</th>
+                <th className="w-[26%] px-4 py-3 text-left">Dispatch No</th>
+                <th className="w-[18%] px-4 py-3 text-left">Date</th>
+                <th className="w-[24%] px-4 py-3 text-left">Customer</th>
+                <th className="w-[16%] px-4 py-3 text-left">Status</th>
+                <th className="w-[16%] px-4 py-3 text-left">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td className="p-4 text-center text-slate-500" colSpan={4}>
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                     Loading reports...
                   </td>
                 </tr>
               )}
               {!loading && reports.length === 0 && (
                 <tr>
-                  <td className="p-4 text-center text-slate-500" colSpan={4}>
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                     No reports available.
                   </td>
                 </tr>
               )}
-              {reports.slice(0, 5).map((report) => (
-                <tr key={report.id} className="border-t border-slate-100">
-                  <td className="p-4 font-semibold text-slate-900">{report.dispatch_no}</td>
-                  <td className="p-4 text-slate-700">{report.customer_name}</td>
-                  <td className="p-4 text-slate-500">{report.customer_address}</td>
-                  <td className="p-4">
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass(report.status)}`}>
-                      {report.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {!loading &&
+                reports.map((report) => {
+                  const fallbackDate = report.form_payload?.dispatchDate || report.form_payload?.notifOpen;
+                  const dateRaw = report.dispatch_date || fallbackDate;
+                  const dateObj = dateRaw ? new Date(dateRaw) : null;
+                  const dateLabel = dateObj && !Number.isNaN(dateObj.getTime())
+                    ? dateObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                    : "—";
+                  const statusClass =
+                    report.status === "done"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : report.status === "progress"
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-slate-200 text-slate-700";
+
+                  return (
+                    <tr key={report.id} className="border-t border-slate-100 bg-white odd:bg-white even:bg-slate-50">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{report.dispatch_no}</td>
+                      <td className="px-4 py-3 text-slate-700">{dateLabel}</td>
+                      <td className="px-4 py-3 text-slate-700">{report.customer_name}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${statusClass}`}>
+                          {report.status === "progress" ? "Task in progress" : report.status === "done" ? "Complete" : "Open"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/teknisi/reports/${report.id}`)}
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm hover:border-slate-300"
+                        >
+                          <QrCode className="h-3.5 w-3.5" />
+                          Detail
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -434,15 +468,3 @@ function DashboardCard({ title, value, description }: { title: string; value: nu
   );
 }
 
-function badgeClass(status: Report["status"]) {
-  switch (status) {
-    case "open":
-      return "bg-amber-100 text-amber-700";
-    case "progress":
-      return "bg-sky-100 text-sky-700";
-    case "done":
-      return "bg-emerald-100 text-emerald-700";
-    default:
-      return "bg-slate-100 text-slate-600";
-  }
-}

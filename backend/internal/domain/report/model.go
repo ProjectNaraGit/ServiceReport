@@ -1,45 +1,51 @@
 package report
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/datatypes"
+)
 
 // ServiceReport stores lifecycle for each maintenance job.
 type ServiceReport struct {
-    ID             uint64    `gorm:"primaryKey"`
-    DispatchNo     string    `gorm:"uniqueIndex;size:32"`
-    AdminID        uint64    `gorm:"index"`
-    TeknisiID      *uint64   `gorm:"index"`
-    CustomerName   string    `gorm:"size:120"`
-    CustomerAddress string   `gorm:"size:255"`
-    CustomerContact string   `gorm:"size:120"`
-    DeviceName     string    `gorm:"size:100"`
-    SerialNumber   string    `gorm:"size:100"`
-    DeviceLocation string    `gorm:"size:120"`
-    Complaint      string    `gorm:"type:text"`
-    ActionTaken    string    `gorm:"type:text"`
-    Status         string    `gorm:"type:enum('open','progress','done');default:'open'"`
-    OpenedAt       time.Time `gorm:"autoCreateTime"`
-    UpdatedAt      time.Time `gorm:"autoUpdateTime"`
-    CompletedAt    *time.Time
-    Photos         []ReportPhoto `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE"`
-    StatusLogs     []StatusLog   `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE"`
+	ID              uint64         `gorm:"primaryKey" json:"id"`
+	DispatchNo      string         `gorm:"uniqueIndex;size:32" json:"dispatch_no"`
+	AdminID         uint64         `gorm:"index" json:"admin_id"`
+	TeknisiID       *uint64        `gorm:"index" json:"teknisi_id"`
+	CustomerName    string         `gorm:"size:120" json:"customer_name"`
+	CustomerAddress string         `gorm:"size:255" json:"customer_address"`
+	CustomerContact string         `gorm:"size:120" json:"customer_contact"`
+	DeviceName      string         `gorm:"size:100" json:"device_name"`
+	SerialNumber    string         `gorm:"size:100" json:"serial_number"`
+	DeviceLocation  string         `gorm:"size:120" json:"device_location"`
+	Complaint       string         `gorm:"type:text" json:"complaint"`
+	ActionTaken     string         `gorm:"type:text" json:"action_taken"`
+	Status          string         `gorm:"type:enum('open','progress','done');default:'open'" json:"status"`
+	OpenedAt        time.Time      `gorm:"autoCreateTime" json:"opened_at"`
+	UpdatedAt       time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+	CompletedAt     *time.Time     `json:"completed_at"`
+	FormPayload     datatypes.JSON `gorm:"type:json" json:"form_payload"`
+	TeknisiPayload  datatypes.JSON `gorm:"type:json" json:"teknisi_payload"`
+	Photos          []ReportPhoto  `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE" json:"photos"`
+	StatusLogs      []StatusLog    `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE" json:"status_logs"`
 }
 
 // ReportPhoto stores uploaded media.
 type ReportPhoto struct {
-    ID        uint64    `gorm:"primaryKey"`
-    ReportID  uint64    `gorm:"index"`
-    Type      string    `gorm:"type:enum('before','after','other');default:'other'"`
-    FilePath  string    `gorm:"size:255"`
-    CreatedAt time.Time `gorm:"autoCreateTime"`
+	ID        uint64    `gorm:"primaryKey" json:"id"`
+	ReportID  uint64    `gorm:"index" json:"report_id"`
+	Type      string    `gorm:"type:enum('before','after','other');default:'other'" json:"type"`
+	FilePath  string    `gorm:"size:255" json:"file_path"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // StatusLog tracks transitions.
 type StatusLog struct {
-    ID        uint64    `gorm:"primaryKey"`
-    ReportID  uint64    `gorm:"index"`
-    ChangedBy uint64
-    From      string    `gorm:"size:32"`
-    To        string    `gorm:"size:32"`
-    Note      string    `gorm:"type:text"`
-    CreatedAt time.Time `gorm:"autoCreateTime"`
+	ID        uint64 `gorm:"primaryKey"`
+	ReportID  uint64 `gorm:"index"`
+	ChangedBy uint64
+	From      string    `gorm:"size:32"`
+	To        string    `gorm:"size:32"`
+	Note      string    `gorm:"type:text"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
