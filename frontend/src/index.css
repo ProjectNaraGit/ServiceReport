@@ -27,6 +27,58 @@ select {
   font: inherit;
 }
 
+.print-only {
+  display: none;
+}
+
+@media print {
+  :root {
+    background-color: #ffffff;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  #root {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .dashboard-shell {
+    display: block;
+    height: auto;
+    min-height: auto;
+  }
+
+  .dashboard-shell > aside,
+  .dashboard-shell > header,
+  .dashboard-shell header,
+  .dashboard-shell nav {
+    display: none !important;
+  }
+
+  .dashboard-shell main {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+}
+
 @layer components {
   .input {
     @apply rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200;

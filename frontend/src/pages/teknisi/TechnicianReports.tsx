@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import { Calendar, Mail, Plus, Printer, QrCode } from "lucide-react";
 import qrSurvey from "../../assets/qrSurvey.svg";
+import kmsLogo from "../../assets/kmsLogo.jpeg";
 
 type DeviceRow = {
   partNo: string;
@@ -135,6 +136,8 @@ const defaultValues: ReportFormValues = {
 const sectionClass = "rounded-[32px] border border-slate-200 bg-white p-6 text-slate-900 shadow-sm";
 const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-600/30";
+const printSectionClass = "rounded-2xl border border-slate-300 p-4";
+const printRowClass = "grid grid-cols-[150px,1fr] gap-3 text-[12px]";
 const surveyLink = "https://docs.google.com/forms/d/e/1FAIpQLSdyNgH3_wVZnAnh-g5AF6g9QYWH-p6TYvAE_nz55DGlqqp8lw/viewform";
 
 export default function ReportForm() {
@@ -195,10 +198,25 @@ export default function ReportForm() {
   const serviceDescriptionWatch = watch("serviceDescription");
   const conclusionWatch = watch("conclusion");
   const notifOpenValue = watch("notifOpen");
+  const dispatchNoValue = watch("dispatchNo");
+  const dispatchDateValue = watch("dispatchDate");
+  const fseNameValue = watch("fseName");
   const customerNameValue = watch("customerName");
+  const customerPersonValue = watch("customerPerson");
+  const departmentValue = watch("department");
+  const addressValue = watch("address");
+  const customerRefValue = watch("customerRef");
   const phoneValue = watch("phone");
   const emailValue = watch("email");
+  const problemDescriptionValue = watch("problemDescription");
+  const recommendationValue = watch("recommendation");
+  const carriedByValue = watch("carriedBy");
+  const carriedDateValue = watch("carriedDate");
+  const approvedByValue = watch("approvedBy");
+  const approvedDateValue = watch("approvedDate");
   const isFinalized = !!finalizedDateValue;
+  const primaryDevice = deviceRowsWatch?.[0];
+  const printableSpares = (spareRowsWatch || []).filter((row) => row.qty || row.partNo || row.description || row.status);
 
   const formatDisplayDate = (value: string) => {
     if (!value) return "";
@@ -207,6 +225,42 @@ export default function ReportForm() {
     const pad = (n: number) => n.toString().padStart(2, "0");
     return `${pad(parsed.getDate())}/${pad(parsed.getMonth() + 1)}/${parsed.getFullYear()}`;
   };
+
+  const formatLongDate = (value: string) => {
+    if (!value) return "-";
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const formatTimeRange = (start?: string, end?: string) => {
+    if (!start && !end) return "-";
+    if (start && end) return `${start} - ${end}`;
+    return `${start || "-"} - ${end || "-"}`;
+  };
+
+  const formatHours = (start?: string, end?: string) => {
+    if (!start || !end) return "-";
+    const [startHour, startMinute] = start.split(":").map(Number);
+    const [endHour, endMinute] = end.split(":").map(Number);
+    if ([startHour, startMinute, endHour, endMinute].some((value) => Number.isNaN(value))) return "-";
+    let startTotal = startHour * 60 + startMinute;
+    let endTotal = endHour * 60 + endMinute;
+    if (endTotal < startTotal) endTotal += 24 * 60;
+    const diff = endTotal - startTotal;
+    const hours = Math.floor(diff / 60);
+    const minutes = diff % 60;
+    return `${String(hours).padStart(2, "0")}.${String(minutes).padStart(2, "0")}`;
+  };
+
+  const jobInfoLabel = selectedJobs.length > 0 ? selectedJobs.join(", ") : "-";
+  const equipmentStatusLabel = isFinalized ? "Complete" : "On Progress";
+  const laborDateValue = finalizedDateValue || dispatchDateValue || notifOpenValue;
+  const timeRangeLabel = formatTimeRange(travelStartTimeWatch, travelFinishTimeWatch);
+  const hoursLabel = formatHours(travelStartTimeWatch, travelFinishTimeWatch);
+  const spareRowsForPrint = printableSpares.length
+    ? printableSpares
+    : [{ qty: "-", partNo: "-", description: "-", status: "-" }];
 
   const withError = (_path: string, base: string) => base;
   const errorMessage = (path: string) => {
@@ -242,6 +296,24 @@ export default function ReportForm() {
 
   const handleShowQr = () => {
     setShowSurveyQrModal(true);
+  };
+
+  const handlePrint = () => {
+    if (!isFinalized) {
+      setMessage("Finalize report terlebih dulu untuk mengaktifkan print.");
+      return;
+    }
+    setMessage(null);
+    const originalTitle = document.title;
+    const dispatchLabel = dispatchNoValue?.trim();
+    document.title = dispatchLabel ? `Service Report ${dispatchLabel}` : "Service Report";
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener("afterprint", restoreTitle);
+    };
+    window.addEventListener("afterprint", restoreTitle);
+    requestAnimationFrame(() => window.print());
+    window.setTimeout(restoreTitle, 1000);
   };
 
   useEffect(() => {
@@ -445,6 +517,7 @@ export default function ReportForm() {
 
   return (
     <div className="space-y-8 pb-16 text-slate-900">
+      <div className="no-print">
       {!id ? (
         <section className={sectionClass}>
           <div className="flex items-center justify-between">
@@ -959,56 +1032,67 @@ export default function ReportForm() {
           )}
         </section>
 
+        </fieldset>
+
         <section className={sectionClass}>
           <div className="grid gap-6 lg:grid-cols-[1.3fr,1fr]">
             <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-700/40 bg-white/80 p-4">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className="border border-slate-700/40 px-3 py-2 text-left font-semibold">Carried out by:</th>
-                      <th className="border border-slate-700/40 px-3 py-2 text-left font-semibold">Sign / Approved by:</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register("carriedBy")} className={inputClass} />
-                      </td>
-                      <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register("approvedBy")} className={inputClass} />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-slate-700/40 px-3 py-4">
-                        <SignaturePad label="Service Engineer Signature" value={carriedSignature} onChange={(data) => setValue("carriedSignature", data)} />
-                        {!carriedSignature && <p className="mt-2 text-xs font-semibold text-red-500">Service engineer signature is required</p>}
-                      </td>
-                      <td className="border border-slate-700/40 px-3 py-4">
-                        <SignaturePad label="Customer Signature" value={approvedSignature} onChange={(data) => setValue("approvedSignature", data)} />
-                        {!approvedSignature && <p className="mt-2 text-xs font-semibold text-red-500">Customer signature is required</p>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-slate-700/40 px-3 py-2">
-                        <input type="date" {...register("carriedDate")} className={inputClass} />
-                      </td>
-                      <td className="border border-slate-700/40 px-3 py-2">
-                        <input type="date" {...register("approvedDate")} className={inputClass} />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-slate-700/40 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Service Engineer</td>
-                      <td className="border border-slate-700/40 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Customer Acknowledgment</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <fieldset disabled={isFinalized} className="space-y-4">
+                <div className="rounded-2xl border border-slate-700/40 bg-white/80 p-4">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className="border border-slate-700/40 px-3 py-2 text-left font-semibold">Carried out by:</th>
+                        <th className="border border-slate-700/40 px-3 py-2 text-left font-semibold">Sign / Approved by:</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-slate-700/40 px-3 py-2">
+                          <input {...register("carriedBy")} className={inputClass} />
+                        </td>
+                        <td className="border border-slate-700/40 px-3 py-2">
+                          <input {...register("approvedBy")} className={inputClass} />
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-slate-700/40 px-3 py-4">
+                          <SignaturePad label="Service Engineer Signature" value={carriedSignature} onChange={(data) => setValue("carriedSignature", data)} />
+                          {!carriedSignature && <p className="mt-2 text-xs font-semibold text-red-500">Service engineer signature is required</p>}
+                        </td>
+                        <td className="border border-slate-700/40 px-3 py-4">
+                          <SignaturePad label="Customer Signature" value={approvedSignature} onChange={(data) => setValue("approvedSignature", data)} />
+                          {!approvedSignature && <p className="mt-2 text-xs font-semibold text-red-500">Customer signature is required</p>}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-slate-700/40 px-3 py-2">
+                          <input type="date" {...register("carriedDate")} className={inputClass} />
+                        </td>
+                        <td className="border border-slate-700/40 px-3 py-2">
+                          <input type="date" {...register("approvedDate")} className={inputClass} />
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="border border-slate-700/40 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Service Engineer</td>
+                        <td className="border border-slate-700/40 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Customer Acknowledgment</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </fieldset>
               <div className="flex flex-wrap gap-3">
                 <button type="button" className="rounded-xl bg-slate-700 px-5 py-2 text-sm font-semibold text-white" onClick={handleFinalizeCheck}>
                   Finalized
                 </button>
-                <button type="button" className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={!isFinalized}
+                  className={`rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                    isFinalized ? "hover:border-slate-400" : "cursor-not-allowed opacity-60"
+                  }`}
+                >
                   <div className="flex items-center gap-2">
                     <Printer className="h-4 w-4" />
                     Print
@@ -1088,11 +1172,13 @@ export default function ReportForm() {
           </div>
 
               <Field label="Change Note" className="mt-6">
-                <textarea {...register("changedNote")} className={`${inputClass} min-h-[100px]`} />
+                <textarea
+                  {...register("changedNote")}
+                  readOnly={isFinalized}
+                  className={`${inputClass} min-h-[100px] ${isFinalized ? "bg-slate-100 cursor-not-allowed" : ""}`}
+                />
               </Field>
             </section>
-
-                </fieldset>
             {message && <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</p>}
           </form>
 
@@ -1148,6 +1234,218 @@ export default function ReportForm() {
                 <br />
                 {surveyLink}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+
+      {id && (
+        <div className="print-only space-y-6 text-slate-900">
+          <div className="flex items-start justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <img src={kmsLogo} alt="PT KMS Indonesia" className="h-12 w-auto object-contain" />
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide">PT. KANDA MEDICAL SOLUTIONS INDONESIA</p>
+                <p className="text-[11px] text-slate-600">medical equipment bussiness, Service and maintenance.</p>
+              </div>
+            </div>
+            <div className="text-right text-[11px] text-slate-500">
+              <p className="font-semibold text-slate-900">Service Report</p>
+              <p>{formatLongDate(finalizedDateValue || dispatchDateValue || notifOpenValue)}</p>
+            </div>
+          </div>
+
+          <div className={printSectionClass}>
+            <h3 className="text-[13px] font-semibold">Customer Details</h3>
+            <div className="mt-3 space-y-2">
+              <div className={printRowClass}>
+                <span className="text-slate-600">Dispatch No</span>
+                <span className="font-semibold text-slate-900">: {dispatchNoValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Dispatch Date</span>
+                <span className="text-slate-900">: {formatLongDate(dispatchDateValue || notifOpenValue)}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Customer Name</span>
+                <span className="text-slate-900">: {customerNameValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Departement</span>
+                <span className="text-slate-900">: {departmentValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Address</span>
+                <span className="text-slate-900">: {addressValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Customer Ref</span>
+                <span className="text-slate-900">: {customerRefValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Contact Name</span>
+                <span className="text-slate-900">: {customerPersonValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Contact Phone</span>
+                <span className="text-slate-900">: {phoneValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Contact Email</span>
+                <span className="text-slate-900">: {emailValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Problem Description</span>
+                <span className="text-slate-900">: {problemDescriptionValue || "-"}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={printSectionClass}>
+            <h3 className="text-[13px] font-semibold">Equipments Details</h3>
+            <div className="mt-3 space-y-2">
+              <div className={printRowClass}>
+                <span className="text-slate-600">Equipment Status</span>
+                <span className="text-slate-900">: {equipmentStatusLabel}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Product Description</span>
+                <span className="text-slate-900">: {primaryDevice?.description || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Part No.</span>
+                <span className="text-slate-900">: {primaryDevice?.partNo || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Serial No.</span>
+                <span className="text-slate-900">: {primaryDevice?.serialNo || "-"}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={printSectionClass}>
+            <h3 className="text-[13px] font-semibold">Activity</h3>
+            <div className="mt-3 space-y-2">
+              <div className={printRowClass}>
+                <span className="text-slate-600">Activity</span>
+                <span className="text-slate-900">: {jobInfoLabel}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Report Problem</span>
+                <span className="text-slate-900">: {problemDescriptionValue || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Identified Problem</span>
+                <span className="text-slate-900">: {serviceDescriptionWatch || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Solution</span>
+                <span className="text-slate-900">: {conclusionWatch || "-"}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Test Produce</span>
+                <span className="text-slate-900">: -</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Test Passed</span>
+                <span className="text-slate-900">: -</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Close Date</span>
+                <span className="text-slate-900">: {formatLongDate(finalizedDateValue || dispatchDateValue || notifOpenValue)}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Field Engineer</span>
+                <span className="text-slate-900">: {fseNameValue || carriedByValue || "-"}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={printSectionClass}>
+            <h3 className="text-[13px] font-semibold">Labor</h3>
+            <div className="mt-3 space-y-2">
+              <div className={printRowClass}>
+                <span className="text-slate-600">Date</span>
+                <span className="text-slate-900">: {formatLongDate(laborDateValue)}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Type</span>
+                <span className="text-slate-900">: {jobInfoLabel}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Start Time - End Time</span>
+                <span className="text-slate-900">: {timeRangeLabel}</span>
+              </div>
+              <div className={printRowClass}>
+                <span className="text-slate-600">Hours</span>
+                <span className="text-slate-900">: {hoursLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={printSectionClass}>
+            <div className="grid gap-4 md:grid-cols-[1.2fr,1fr]">
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-[13px] font-semibold">Materials</h3>
+                  <p className="text-[11px] text-slate-600">Hardisk and Software</p>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-300">
+                  <table className="w-full border-collapse text-[11px]">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="border border-slate-300 px-2 py-1 text-left">Qty</th>
+                        <th className="border border-slate-300 px-2 py-1 text-left">Part No.</th>
+                        <th className="border border-slate-300 px-2 py-1 text-left">Description</th>
+                        <th className="border border-slate-300 px-2 py-1 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {spareRowsForPrint.map((row, index) => (
+                        <tr key={`${row.partNo}-${index}`} className="border-t border-slate-200">
+                          <td className="border border-slate-300 px-2 py-1">{row.qty || "-"}</td>
+                          <td className="border border-slate-300 px-2 py-1">{row.partNo || "-"}</td>
+                          <td className="border border-slate-300 px-2 py-1">{row.description || "-"}</td>
+                          <td className="border border-slate-300 px-2 py-1">{row.status || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-slate-300 p-2 text-center text-[10px]">
+                    <p className="font-semibold text-slate-600">Engineer Signature</p>
+                    <div className="mt-2 flex h-20 items-center justify-center rounded-md border border-dashed border-slate-300 bg-white">
+                      {carriedSignature ? (
+                        <img src={carriedSignature} alt="Engineer signature" className="h-full w-full object-contain" />
+                      ) : (
+                        <span className="text-slate-400">Signature</span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-[11px] font-semibold">{carriedByValue || fseNameValue || "-"}</p>
+                    <p className="text-[10px] text-slate-500">{formatLongDate(carriedDateValue)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-300 p-2 text-center text-[10px]">
+                    <p className="font-semibold text-slate-600">Customer Signature</p>
+                    <div className="mt-2 flex h-20 items-center justify-center rounded-md border border-dashed border-slate-300 bg-white">
+                      {approvedSignature ? (
+                        <img src={approvedSignature} alt="Customer signature" className="h-full w-full object-contain" />
+                      ) : (
+                        <span className="text-slate-400">Signature</span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-[11px] font-semibold">{approvedByValue || "-"}</p>
+                    <p className="text-[10px] text-slate-500">{formatLongDate(approvedDateValue)}</p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3 className="text-[13px] font-semibold">Recommendation and Note</h3>
+                <div className="mt-3 min-h-[200px] rounded-xl border border-slate-300 bg-white p-3 text-[11px] text-slate-800">
+                  {recommendationValue || "-"}
+                </div>
+              </div>
             </div>
           </div>
         </div>

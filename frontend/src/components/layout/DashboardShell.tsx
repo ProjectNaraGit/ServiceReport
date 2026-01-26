@@ -32,7 +32,7 @@ export default function DashboardShell() {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900">
+    <div className="dashboard-shell flex h-screen bg-slate-50 text-slate-900">
       <aside
         className={clsx(
           "flex flex-col border-r border-slate-200 bg-white/90 backdrop-blur-md transition-all duration-300",
