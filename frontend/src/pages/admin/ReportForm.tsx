@@ -3,6 +3,7 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { api } from "../../lib/api";
 import { Calendar, Mail, Plus, Printer, Send, UploadCloud } from "lucide-react";
 import qrSurvey from "../../assets/qrSurvey.svg";
+import { useAuth } from "../../hooks/useAuth";
 
 type DeviceRow = {
   partNo: string;
@@ -131,6 +132,8 @@ const defaultValues: ReportFormValues = {
 const sectionClass = "rounded-[32px] border border-slate-200 bg-white p-6 text-slate-900 shadow-sm";
 const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-600/30";
+const lockedFieldClass = "bg-slate-100 text-slate-500 cursor-not-allowed focus:ring-0";
+const lockedButtonClass = "cursor-not-allowed opacity-60";
 const surveyLink = "https://docs.google.com/forms/d/e/1FAIpQLSdyNgH3_wVZnAnh-g5AF6g9QYWH-p6TYvAE_nz55DGlqqp8lw/viewform";
 const MAX_PROBLEM_PHOTOS = 3;
 
@@ -145,6 +148,8 @@ export default function ReportForm() {
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [pendingValues, setPendingValues] = useState<ReportFormValues | null>(null);
   const [showSurveyQrModal, setShowSurveyQrModal] = useState(false);
+  const { user } = useAuth();
+  const lockNonRequiredSections = user?.role === "ADMIN";
 
   const {
     register,
@@ -592,7 +597,10 @@ export default function ReportForm() {
               onClick={() =>
                 appendDevice({ partNo: "", description: "", serialNo: "", swVersion: "", location: "", workStart: "", workFinish: "" })
               }
-              className="flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+              disabled={lockNonRequiredSections}
+              className={`flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white ${
+                lockNonRequiredSections ? lockedButtonClass : ""
+              }`}
             >
               <Plus className="h-4 w-4" />
               Add Table
@@ -614,25 +622,53 @@ export default function ReportForm() {
                   <tr key={field.id}>
                     <td className="border border-slate-200 px-3 py-2 text-center text-sm">{index + 1}</td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.partNo` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.partNo` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.description` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.description` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.serialNo` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.serialNo` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.swVersion` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.swVersion` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.location` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.location` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.workStart` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.workStart` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`deviceRows.${index}.workFinish` as const)} className={inputClass} />
+                      <input
+                        {...register(`deviceRows.${index}.workFinish` as const)}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        readOnly={lockNonRequiredSections}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -645,7 +681,11 @@ export default function ReportForm() {
           <h3 className="text-xl font-semibold">Summary</h3>
           <div className="mt-4 grid gap-6 lg:grid-cols-[1.8fr,1fr]">
             <Field label="Service Description / Analysis">
-              <textarea {...register("serviceDescription")} className={`${inputClass} min-h-[180px]`} />
+              <textarea
+                {...register("serviceDescription")}
+                readOnly={lockNonRequiredSections}
+                className={`${inputClass} min-h-[180px] ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+              />
             </Field>
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
@@ -662,28 +702,58 @@ export default function ReportForm() {
                     <tr>
                       <td className="border border-slate-700/40 px-2 py-1 font-semibold">Departure</td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="date" {...register("travelStart")} className={inputClass} />
+                        <input
+                          type="date"
+                          {...register("travelStart")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="date" {...register("travelFinish")} className={inputClass} />
+                        <input
+                          type="date"
+                          {...register("travelFinish")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                     <tr>
                       <td className="border border-slate-700/40 px-2 py-1 font-semibold">Return</td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="date" {...register("returnStart")} className={inputClass} />
+                        <input
+                          type="date"
+                          {...register("returnStart")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="date" {...register("returnFinish")} className={inputClass} />
+                        <input
+                          type="date"
+                          {...register("returnFinish")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                     <tr>
                       <td className="border border-slate-700/40 px-2 py-1 font-semibold">Time</td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="time" {...register("travelStartTime")} className={inputClass} />
+                        <input
+                          type="time"
+                          {...register("travelStartTime")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="time" {...register("travelFinishTime")} className={inputClass} />
+                        <input
+                          type="time"
+                          {...register("travelFinishTime")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                   </tbody>
@@ -702,10 +772,20 @@ export default function ReportForm() {
                   <tbody>
                     <tr>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="time" {...register("waitingStart")} className={inputClass} />
+                        <input
+                          type="time"
+                          {...register("waitingStart")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-2 py-1">
-                        <input type="time" {...register("waitingFinish")} className={inputClass} />
+                        <input
+                          type="time"
+                          {...register("waitingFinish")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                   </tbody>
@@ -720,7 +800,10 @@ export default function ReportForm() {
               <button
                 type="button"
                 onClick={() => appendTool({ code: "", description: "", usableLimit: "" })}
-                className="flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+                disabled={lockNonRequiredSections}
+                className={`flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white ${
+                  lockNonRequiredSections ? lockedButtonClass : ""
+                }`}
               >
                 <Plus className="h-4 w-4" />
                 Add Table
@@ -741,13 +824,25 @@ export default function ReportForm() {
                   {toolFields.map((field, index) => (
                     <tr key={field.id}>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register(`tools.${index}.code` as const)} className={inputClass} />
+                        <input
+                          {...register(`tools.${index}.code` as const)}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register(`tools.${index}.description` as const)} className={inputClass} />
+                        <input
+                          {...register(`tools.${index}.description` as const)}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register(`tools.${index}.usableLimit` as const)} className={inputClass} />
+                        <input
+                          {...register(`tools.${index}.usableLimit` as const)}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -758,10 +853,18 @@ export default function ReportForm() {
 
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <Field label="Conclusion">
-              <textarea {...register("conclusion")} className={`${inputClass} min-h-[100px]`} />
+              <textarea
+                {...register("conclusion")}
+                readOnly={lockNonRequiredSections}
+                className={`${inputClass} min-h-[100px] ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+              />
             </Field>
             <Field label="Recommendation and Note">
-              <textarea {...register("recommendation")} className={`${inputClass} min-h-[100px]`} />
+              <textarea
+                {...register("recommendation")}
+                readOnly={lockNonRequiredSections}
+                className={`${inputClass} min-h-[100px] ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+              />
             </Field>
           </div>
         </section>
@@ -772,7 +875,10 @@ export default function ReportForm() {
             <button
               type="button"
               onClick={() => appendSpare({ qty: "", partNo: "", description: "", status: "" })}
-              className="flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+              disabled={lockNonRequiredSections}
+              className={`flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white ${
+                lockNonRequiredSections ? lockedButtonClass : ""
+              }`}
             >
               <Plus className="h-4 w-4" />
               Add Table
@@ -793,16 +899,32 @@ export default function ReportForm() {
                 {spareFields.map((field, index) => (
                   <tr key={field.id}>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`spareparts.${index}.qty` as const)} className={inputClass} />
+                      <input
+                        {...register(`spareparts.${index}.qty` as const)}
+                        readOnly={lockNonRequiredSections}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`spareparts.${index}.partNo` as const)} className={inputClass} />
+                      <input
+                        {...register(`spareparts.${index}.partNo` as const)}
+                        readOnly={lockNonRequiredSections}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`spareparts.${index}.description` as const)} className={inputClass} />
+                      <input
+                        {...register(`spareparts.${index}.description` as const)}
+                        readOnly={lockNonRequiredSections}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                      />
                     </td>
                     <td className="border border-slate-200 px-3 py-2">
-                      <input {...register(`spareparts.${index}.status` as const)} className={inputClass} />
+                      <input
+                        {...register(`spareparts.${index}.status` as const)}
+                        readOnly={lockNonRequiredSections}
+                        className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -825,26 +947,54 @@ export default function ReportForm() {
                   <tbody>
                     <tr>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register("carriedBy")} className={inputClass} />
+                        <input
+                          {...register("carriedBy")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register("approvedBy")} className={inputClass} />
+                        <input
+                          {...register("approvedBy")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                     <tr>
                       <td className="border border-slate-700/40 px-3 py-4">
-                        <SignaturePad label="Service Engineer Signature" value={carriedSignature} onChange={(data) => setValue("carriedSignature", data)} />
+                        <SignaturePad
+                          label="Service Engineer Signature"
+                          value={carriedSignature}
+                          onChange={(data) => setValue("carriedSignature", data)}
+                          disabled={lockNonRequiredSections}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-3 py-4">
-                        <SignaturePad label="Customer Signature" value={approvedSignature} onChange={(data) => setValue("approvedSignature", data)} />
+                        <SignaturePad
+                          label="Customer Signature"
+                          value={approvedSignature}
+                          onChange={(data) => setValue("approvedSignature", data)}
+                          disabled={lockNonRequiredSections}
+                        />
                       </td>
                     </tr>
                     <tr>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input type="date" {...register("carriedDate")} className={inputClass} />
+                        <input
+                          type="date"
+                          {...register("carriedDate")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                       <td className="border border-slate-700/40 px-3 py-2">
-                        <input type="date" {...register("approvedDate")} className={inputClass} />
+                        <input
+                          type="date"
+                          {...register("approvedDate")}
+                          readOnly={lockNonRequiredSections}
+                          className={`${inputClass} ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+                        />
                       </td>
                     </tr>
                     <tr>
@@ -938,59 +1088,67 @@ export default function ReportForm() {
           </div>
 
           <Field label="Change Note" className="mt-6">
-            <textarea {...register("changedNote")} className={`${inputClass} min-h-[100px]`} />
+            <textarea
+              {...register("changedNote")}
+              readOnly={lockNonRequiredSections}
+              className={`${inputClass} min-h-[100px] ${lockNonRequiredSections ? lockedFieldClass : ""}`}
+            />
           </Field>
         </section>
 
         {message && <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</p>}
 
-      {showSendConfirm && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl shadow-slate-900/10">
-            <h3 className="text-lg font-semibold text-slate-900">Send to FSE?</h3>
-            <p className="mt-2 text-sm text-slate-600">Ensure all data is correct before dispatching this report to the technician.</p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300"
-                onClick={() => {
-                  if (loading) return;
-                  setShowSendConfirm(false);
-                  setPendingValues(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
-                disabled={loading || !pendingValues}
-                onClick={() => pendingValues && submitToFse(pendingValues)}
-              >
-                {loading ? "Sending..." : "Yes, send"}
-              </button>
+        {showSendConfirm && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl shadow-slate-900/10">
+              <h3 className="text-lg font-semibold text-slate-900">Send to FSE?</h3>
+              <p className="mt-2 text-sm text-slate-600">Ensure all data is correct before dispatching this report to the technician.</p>
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300"
+                  onClick={() => {
+                    if (loading) return;
+                    setShowSendConfirm(false);
+                    setPendingValues(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                  disabled={loading || !pendingValues}
+                  onClick={() => pendingValues && submitToFse(pendingValues)}
+                >
+                  {loading ? "Sending..." : "Yes, send"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {showSurveyQrModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4">
-          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl shadow-slate-900/20">
-            <button
-              type="button"
-              className="absolute right-4 top-4 rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:border-slate-300"
-              onClick={() => setShowSurveyQrModal(false)}
-            >
-              Close
-            </button>
-            <div className="flex flex-col items-center gap-4">
-              <img src={qrSurvey} alt="Survey QR" className="h-56 w-56" />
-              <p className="text-center text-sm text-slate-600">Share this QR or send the link below:<br />{surveyLink}</p>
+        {showSurveyQrModal && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4">
+            <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl shadow-slate-900/20">
+              <button
+                type="button"
+                className="absolute right-4 top-4 rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:border-slate-300"
+                onClick={() => setShowSurveyQrModal(false)}
+              >
+                Close
+              </button>
+              <div className="flex flex-col items-center gap-4">
+                <img src={qrSurvey} alt="Survey QR" className="h-56 w-56" />
+                <p className="text-center text-sm text-slate-600">
+                  Share this QR or send the link below:
+                  <br />
+                  {surveyLink}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </form>
     </div>
   );
@@ -1021,7 +1179,17 @@ function Field({
   );
 }
 
-function SignaturePad({ label, value, onChange }: { label: string; value: string; onChange: (dataUrl: string) => void }) {
+function SignaturePad({
+  label,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (dataUrl: string) => void;
+  disabled?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
@@ -1098,27 +1266,45 @@ function SignaturePad({ label, value, onChange }: { label: string; value: string
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-700">
         <span>{label}</span>
-        <button type="button" className="text-slate-500 underline" onClick={clearCanvas}>
+        <button type="button" className="text-slate-500 underline disabled:opacity-60" onClick={clearCanvas} disabled={disabled}>
           Clear
         </button>
       </div>
-      <canvas
-        ref={canvasRef}
-        className="h-32 w-full cursor-crosshair rounded-xl border border-dashed border-slate-300 bg-white"
-        onPointerDown={(event) => {
-          isDrawing.current = true;
-          const canvas = canvasRef.current;
-          if (canvas) canvas.setPointerCapture(event.pointerId);
-          draw(event);
-        }}
-        onPointerMove={draw}
-        onPointerUp={(event) => {
-          const canvas = canvasRef.current;
-          if (canvas) canvas.releasePointerCapture(event.pointerId);
-          handlePointerUp();
-        }}
-        onPointerLeave={handlePointerUp}
-      />
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          className={`h-32 w-full rounded-xl border border-dashed border-slate-300 bg-white ${
+            disabled ? "cursor-not-allowed opacity-70" : "cursor-crosshair"
+          }`}
+          style={disabled ? { pointerEvents: "none" } : undefined}
+          onPointerDown={(event) => {
+            if (disabled) return;
+            isDrawing.current = true;
+            const canvas = canvasRef.current;
+            if (canvas) canvas.setPointerCapture(event.pointerId);
+            draw(event);
+          }}
+          onPointerMove={(event) => {
+            if (disabled) return;
+            draw(event);
+          }}
+          onPointerUp={(event) => {
+            if (disabled) return;
+            const canvas = canvasRef.current;
+            if (canvas) canvas.releasePointerCapture(event.pointerId);
+            handlePointerUp();
+          }}
+          onPointerLeave={() => {
+            if (disabled) return;
+            handlePointerUp();
+          }}
+        />
+        {disabled && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Locked for admin
+          </div>
+        )}
+      </div>
     </div>
   );
 }
