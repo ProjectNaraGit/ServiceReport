@@ -44,7 +44,7 @@ type ReportFormValues = {
   customerPerson: string;
   department: string;
   address: string;
-  customerRef: string;
+  // customerRef: string;
   phone: string;
   email: string;
   notifOpen: string;
@@ -66,6 +66,8 @@ type ReportFormValues = {
   conclusion: string;
   recommendation: string;
   changedNote: string;
+  beforeImage: string;
+  afterImage: string;
   carriedBy: string;
   carriedDate: string;
   approvedBy: string;
@@ -85,7 +87,7 @@ const defaultValues: ReportFormValues = {
   customerPerson: "",
   department: "",
   address: "",
-  customerRef: "",
+  // customerRef: "",
   phone: "",
   email: "",
   notifOpen: "",
@@ -104,6 +106,8 @@ const defaultValues: ReportFormValues = {
   conclusion: "",
   recommendation: "",
   changedNote: "",
+  beforeImage: "",
+  afterImage: "",
   carriedBy: "",
   carriedDate: "",
   approvedBy: "",
@@ -186,8 +190,11 @@ export default function ReportForm() {
   const customerNameValue = watch("customerName");
   const phoneValue = watch("phone");
   const emailValue = watch("email");
+  const beforeImageValue = watch("beforeImage");
+  const afterImageValue = watch("afterImage");
 
   const toggleJob = (job: string) => {
+    if (lockNonRequiredSections) return;
     const next = selectedJobs.includes(job) ? selectedJobs.filter((item) => item !== job) : [...selectedJobs, job];
     setValue("jobInfo", next, { shouldDirty: true });
     if (next.length > 0) {
@@ -268,6 +275,17 @@ export default function ReportForm() {
     setProblemPhotos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
+  const handleBeforeAfterImage = (key: "beforeImage" | "afterImage") => (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setValue(key, reader.result as string, { shouldDirty: true });
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  };
+
   const surveyMessage = () => {
     const greeting = customerNameValue ? `Halo ${customerNameValue},` : "Halo pelanggan,";
     return `${greeting}\n\nMohon bantuannya untuk mengisi survei layanan berikut:\n${surveyLink}`;
@@ -299,11 +317,6 @@ export default function ReportForm() {
     (values) => {
       if (!values.teknisiId) {
         setError("fseName", { type: "required", message: "Select a technician from the list." });
-        setMessage("Please complete all required fields before sending to FSE.");
-        return;
-      }
-      if (!values.jobInfo || values.jobInfo.length === 0) {
-        setError("jobInfo", { type: "required", message: "Select at least one job information." });
         setMessage("Please complete all required fields before sending to FSE.");
         return;
       }
@@ -469,64 +482,34 @@ export default function ReportForm() {
             <textarea {...register("address", { required: "Address is required" })} className={`${inputClass} min-h-[64px]`} />
           </Field>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-4">
-            <Field label="Customer Ref" required error={errors.customerRef?.message}>
+          <div className="mt-4 grid gap-4 lg:grid-cols-4 w-full">
+            {/* <Field label="Customer Ref" required error={errors.customerRef?.message}>
               <input {...register("customerRef", { required: "Customer reference is required" })} className={inputClass} />
-            </Field>
+            </Field> */}
             <Field label="Phone No" required error={errors.phone?.message}>
               <input {...register("phone", { required: "Phone number is required" })} className={inputClass} />
             </Field>
             <Field label="Email" required error={errors.email?.message}>
               <input type="email" {...register("email", { required: "Email is required" })} className={inputClass} />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Notif Open" required error={errors.notifOpen?.message}>
-                <input type="date" {...register("notifOpen", { required: "Notification open date is required" })} className={`${inputClass} pr-10`} />
-              </Field>
-              <Field label="Date Finalized">
-                <input type="hidden" {...register("finalizedDate")} />
-                <input
-                  type="text"
-                  value={finalizedDateValue ? finalizedDateValue : ""}
-                  readOnly
-                  className={`${inputClass} pr-10 bg-slate-100 text-slate-500 placeholder:text-transparent`}
-                  placeholder=" "
-                />
-                <p className="mt-1 text-xs text-slate-500">Currently locked; will be set after completion.</p>
-              </Field>
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold">Job Information</h3>
-              <span className="text-sm text-red-500">*</span>
-            </div>
-            {errors.jobInfo && <p className="text-sm text-red-500">{errors.jobInfo.message}</p>}
-            <div className="mt-3 flex flex-wrap gap-3">
-              {jobOptions.map((option) => {
-                const active = selectedJobs.includes(option);
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => toggleJob(option)}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${
-                      active ? "bg-slate-700 text-white" : "bg-white/70 text-slate-700"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center rounded border ${
-                        active ? "border-white bg-white" : "border-slate-500 bg-transparent"
-                      }`}
-                    >
-                      {active && <span className="h-2 w-2 rounded-sm bg-slate-700" />}
-                    </span>
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
+            <Field label="Notif Open" required error={errors.notifOpen?.message}>
+              <input
+                type="date"
+                {...register("notifOpen", { required: "Notification open date is required" })}
+                className={`${inputClass} pr-10 w-full`}
+              />
+            </Field>
+            <Field label="Date Finalized" className="w-full">
+              <input type="hidden" {...register("finalizedDate")} />
+              <input
+                type="text"
+                value={finalizedDateValue ? finalizedDateValue : ""}
+                readOnly
+                className={`${inputClass} pr-10 bg-slate-100 text-slate-500 placeholder:text-transparent w-full`}
+                placeholder=" "
+              />
+              <p className="mt-1 text-xs text-slate-500">Currently locked; will be set after completion.</p>
+            </Field>
           </div>
 
           <div className="mt-6">
@@ -590,6 +573,39 @@ export default function ReportForm() {
         </section>
 
         <section className={sectionClass}>
+          <div className="mb-6">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold">Job Information</h3>
+              <span className="text-red-500">*</span>
+            </div>
+            {errors.jobInfo && <p className="text-sm text-red-500">{errors.jobInfo.message}</p>}
+            <div className="mt-3 flex flex-wrap gap-3">
+              {jobOptions.map((option) => {
+                const active = selectedJobs.includes(option);
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => toggleJob(option)}
+                    disabled={lockNonRequiredSections}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${
+                      active ? "bg-slate-700 text-white" : "bg-white/70 text-slate-700"
+                    } ${lockNonRequiredSections ? "cursor-not-allowed opacity-70" : ""}`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded border ${
+                        active ? "border-white bg-white" : "border-slate-500 bg-transparent"
+                      }`}
+                    >
+                      {active && <span className="h-2 w-2 rounded-sm bg-slate-700" />}
+                    </span>
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h3 className="text-xl font-semibold">Device Information</h3>
             <button
@@ -606,6 +622,7 @@ export default function ReportForm() {
               Add Table
             </button>
           </div>
+
           <div className="mt-4 overflow-x-auto rounded-[24px] border border-slate-200 bg-white">
             <table className="w-full border-collapse text-sm">
               <thead className="bg-slate-50 text-left font-semibold text-slate-900">
@@ -934,7 +951,59 @@ export default function ReportForm() {
         </section>
 
         <section className={sectionClass}>
-          <div className="grid gap-6 lg:grid-cols-[1.3fr,1fr]">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Before</p>
+              <div className="mt-3">
+                {beforeImageValue ? (
+                  <img src={beforeImageValue} alt="Before" className="h-40 w-full rounded-xl object-cover" />
+                ) : (
+                  <div className="flex h-40 items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
+                    No image
+                  </div>
+                )}
+              </div>
+              <label className={`mt-3 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                lockNonRequiredSections ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+              }`}>
+                Upload Before
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleBeforeAfterImage("beforeImage")}
+                  disabled={lockNonRequiredSections}
+                />
+              </label>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">After</p>
+              <div className="mt-3">
+                {afterImageValue ? (
+                  <img src={afterImageValue} alt="After" className="h-40 w-full rounded-xl object-cover" />
+                ) : (
+                  <div className="flex h-40 items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
+                    No image
+                  </div>
+                )}
+              </div>
+              <label className={`mt-3 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                lockNonRequiredSections ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+              }`}>
+                Upload After
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleBeforeAfterImage("afterImage")}
+                  disabled={lockNonRequiredSections}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-[1.3fr,1fr]">
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-700/40 bg-white/80 p-4">
                 <table className="w-full border-collapse text-sm">
@@ -1086,14 +1155,6 @@ export default function ReportForm() {
               </div>
             </div>
           </div>
-
-          <Field label="Change Note" className="mt-6">
-            <textarea
-              {...register("changedNote")}
-              readOnly={lockNonRequiredSections}
-              className={`${inputClass} min-h-[100px] ${lockNonRequiredSections ? lockedFieldClass : ""}`}
-            />
-          </Field>
         </section>
 
         {message && <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</p>}
