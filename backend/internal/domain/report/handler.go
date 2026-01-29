@@ -39,6 +39,10 @@ func (h *Handler) TechnicianDetail(c *gin.Context) {
 	teknisiID := c.GetUint64("userID")
 	report, err := h.svc.GetForTechnician(ctx, uri.ID, teknisiID)
 	if err != nil {
+		if err == ErrReportForbidden {
+			response.ForbiddenWithMessage(c, "report not assigned to this technician")
+			return
+		}
 		if err == ErrReportNotFound {
 			response.NotFound(c, "report not found")
 			return
@@ -65,6 +69,10 @@ func (h *Handler) SaveTechnicianForm(c *gin.Context) {
 	}
 	report, err := h.svc.SaveTechnicianPayload(c.Request.Context(), uri.ID, teknisiID, req.Payload)
 	if err != nil {
+		if err == ErrReportForbidden {
+			response.ForbiddenWithMessage(c, "report not assigned to this technician")
+			return
+		}
 		if err == ErrReportNotFound {
 			response.NotFound(c, "report not found")
 			return

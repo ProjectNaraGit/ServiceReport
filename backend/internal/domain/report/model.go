@@ -11,7 +11,7 @@ type ServiceReport struct {
 	ID              uint64         `gorm:"primaryKey" json:"id"`
 	DispatchNo      string         `gorm:"uniqueIndex;size:32" json:"dispatch_no"`
 	AdminID         uint64         `gorm:"index" json:"admin_id"`
-	TeknisiID       *uint64        `gorm:"index" json:"teknisi_id"`
+	TeknisiID       *uint64        `gorm:"index;index:idx_teknisi_opened_at,priority:1" json:"teknisi_id"`
 	CustomerName    string         `gorm:"size:120" json:"customer_name"`
 	CustomerAddress string         `gorm:"size:255" json:"customer_address"`
 	CustomerContact string         `gorm:"size:120" json:"customer_contact"`
@@ -20,8 +20,8 @@ type ServiceReport struct {
 	DeviceLocation  string         `gorm:"size:120" json:"device_location"`
 	Complaint       string         `gorm:"type:text" json:"complaint"`
 	ActionTaken     string         `gorm:"type:text" json:"action_taken"`
-	Status          string         `gorm:"type:enum('open','progress','done');default:'open'" json:"status"`
-	OpenedAt        time.Time      `gorm:"autoCreateTime" json:"opened_at"`
+	Status          string         `gorm:"type:enum('open','progress','done');default:'open';index:idx_status_opened_at,priority:1" json:"status"`
+	OpenedAt        time.Time      `gorm:"autoCreateTime;index:idx_status_opened_at,priority:2;index:idx_teknisi_opened_at,priority:2" json:"opened_at"`
 	UpdatedAt       time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
 	CompletedAt     *time.Time     `json:"completed_at"`
 	FormPayload     datatypes.JSON `gorm:"type:json" json:"form_payload"`

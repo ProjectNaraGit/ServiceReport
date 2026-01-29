@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import { Calendar, Mail, Plus, Printer, QrCode } from "lucide-react";
 import qrSurvey from "../../assets/qrSurvey.svg";
 import kmsLogo from "../../assets/kmsLogo.jpeg";
+import ServiceReportPrintModal, { type PrintableReport } from "../../components/print/ServiceReportPrintModal";
 
 type DeviceRow = {
   partNo: string;
@@ -70,6 +71,10 @@ type ReportFormValues = {
   conclusion: string;
   recommendation: string;
   changedNote: string;
+  beforeImage: string;
+  afterImage: string;
+  beforeEvidence: string[];
+  afterEvidence: string[];
   carriedBy: string;
   carriedDate: string;
   approvedBy: string;
@@ -108,6 +113,10 @@ const defaultValues: ReportFormValues = {
   conclusion: "",
   recommendation: "",
   changedNote: "",
+  beforeImage: "",
+  afterImage: "",
+  beforeEvidence: [],
+  afterEvidence: [],
   carriedBy: "",
   carriedDate: "",
   approvedBy: "",
@@ -153,6 +162,12 @@ export default function ReportForm() {
   const [pendingFinalize, setPendingFinalize] = useState(false);
   const [finalizeReady, setFinalizeReady] = useState(false);
   const [showSurveyQrModal, setShowSurveyQrModal] = useState(false);
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [imagePreviewSrc, setImagePreviewSrc] = useState<string | null>(null);
+  const [imagePreviewTitle, setImagePreviewTitle] = useState<string>("");
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printModalAuto, setPrintModalAuto] = useState(false);
+  const [printSnapshot, setPrintSnapshot] = useState<PrintableReport | null>(null);
 
   const {
     register,
@@ -214,6 +229,8 @@ export default function ReportForm() {
   const carriedDateValue = watch("carriedDate");
   const approvedByValue = watch("approvedBy");
   const approvedDateValue = watch("approvedDate");
+  const beforeEvidenceValue = watch("beforeEvidence");
+  const afterEvidenceValue = watch("afterEvidence");
   const isFinalized = !!finalizedDateValue;
   const primaryDevice = deviceRowsWatch?.[0];
   const printableSpares = (spareRowsWatch || []).filter((row) => row.qty || row.partNo || row.description || row.status);
@@ -258,6 +275,66 @@ export default function ReportForm() {
   const laborDateValue = finalizedDateValue || dispatchDateValue || notifOpenValue;
   const timeRangeLabel = formatTimeRange(travelStartTimeWatch, travelFinishTimeWatch);
   const hoursLabel = formatHours(travelStartTimeWatch, travelFinishTimeWatch);
+
+  const toggleJob = (job: string) => {
+    if (isFinalized) return;
+    const next = selectedJobs.includes(job) ? selectedJobs.filter((item) => item !== job) : [...selectedJobs, job];
+    setValue("jobInfo", next, { shouldDirty: true });
+    if (next.length > 0) {
+      clearErrors("jobInfo");
+    }
+  };
+
+  const normalizeEvidence = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.filter((item) => typeof item === "string" && item.trim());
+    if (typeof value === "string" && value.trim()) return [value];
+    return [];
+  };
+
+  const handleEvidenceUpload = (key: "beforeEvidence" | "afterEvidence") => (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const current = normalizeEvidence(getValues(key));
+    const remaining = Math.max(0, 6 - current.length);
+    const nextFiles = files.slice(0, remaining);
+    if (nextFiles.length === 0) {
+      event.target.value = "";
+      return;
+    }
+
+    const readAsDataURL = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read image"));
+        reader.readAsDataURL(file);
+      });
+
+    Promise.all(nextFiles.map(readAsDataURL))
+      .then((results) => {
+        const merged = [...current, ...results].slice(0, 6);
+        setValue(key, merged, { shouldDirty: true });
+        const first = merged[0] || "";
+        setValue(key === "beforeEvidence" ? "beforeImage" : "afterImage", first, { shouldDirty: true });
+      })
+      .catch(() => {
+        setMessage("Failed to load image.");
+      })
+      .finally(() => {
+        event.target.value = "";
+      });
+  };
+
+  const removeEvidenceAt = (key: "beforeEvidence" | "afterEvidence", index: number) => {
+    if (isFinalized) return;
+    const current = normalizeEvidence(getValues(key));
+    const merged = current.filter((_, i) => i !== index);
+    setValue(key, merged, { shouldDirty: true });
+    const first = merged[0] || "";
+    setValue(key === "beforeEvidence" ? "beforeImage" : "afterImage", first, { shouldDirty: true });
+  };
+
   const spareRowsForPrint = printableSpares.length
     ? printableSpares
     : [{ qty: "-", partNo: "-", description: "-", status: "-" }];
@@ -298,22 +375,60 @@ export default function ReportForm() {
     setShowSurveyQrModal(true);
   };
 
+  const openImagePreview = (src: string, title: string) => {
+    setImagePreviewSrc(src);
+    setImagePreviewTitle(title);
+    setImagePreviewOpen(true);
+  };
+
+  const closeImagePreview = () => {
+    setImagePreviewOpen(false);
+    setImagePreviewSrc(null);
+    setImagePreviewTitle("");
+  };
+
   const handlePrint = () => {
     if (!isFinalized) {
       setMessage("Finalize report terlebih dulu untuk mengaktifkan print.");
       return;
     }
     setMessage(null);
-    const originalTitle = document.title;
-    const dispatchLabel = dispatchNoValue?.trim();
-    document.title = dispatchLabel ? `Service Report ${dispatchLabel}` : "Service Report";
-    const restoreTitle = () => {
-      document.title = originalTitle;
-      window.removeEventListener("afterprint", restoreTitle);
+
+    const snapshot: PrintableReport = {
+      dispatchNo: dispatchNoValue,
+      dispatchDate: dispatchDateValue,
+      customerName: customerNameValue,
+      customerPerson: customerPersonValue,
+      department: departmentValue,
+      address: addressValue,
+      phone: phoneValue,
+      email: emailValue,
+      notifOpen: notifOpenValue,
+      finalizedDate: finalizedDateValue,
+      jobInfo: selectedJobs,
+      problemDescription: problemDescriptionValue,
+      serviceDescription: serviceDescriptionWatch,
+      conclusion: conclusionWatch,
+      recommendation: recommendationValue,
+      changedNote: "",
+      carriedBy: carriedByValue || fseNameValue,
+      carriedDate: carriedDateValue,
+      approvedBy: approvedByValue,
+      approvedDate: approvedDateValue,
+      carriedSignature,
+      approvedSignature,
+      travelStartTime: travelStartTimeWatch,
+      travelFinishTime: travelFinishTimeWatch,
+      beforeEvidence: beforeEvidenceValue || [],
+      afterEvidence: afterEvidenceValue || [],
+      spareparts: spareRowsWatch,
+      tools: toolRowsWatch,
+      deviceRows: deviceRowsWatch,
     };
-    window.addEventListener("afterprint", restoreTitle);
-    requestAnimationFrame(() => window.print());
-    window.setTimeout(restoreTitle, 1000);
+
+    setPrintSnapshot(snapshot);
+    setPrintModalAuto(true);
+    setPrintModalOpen(true);
   };
 
   useEffect(() => {
@@ -349,11 +464,17 @@ export default function ReportForm() {
         const detail: ReportDetail = res.data?.data;
         const payload = detail.teknisi_payload || detail.form_payload;
         if (payload) {
+          const normalizedBeforeEvidence = normalizeEvidence((payload as any).beforeEvidence ?? (payload as any).beforeImage);
+          const normalizedAfterEvidence = normalizeEvidence((payload as any).afterEvidence ?? (payload as any).afterImage);
           reset({
             ...defaultValues,
             ...payload,
             teknisiId: payload.teknisiId ?? null,
             jobInfo: payload.jobInfo ?? [],
+            beforeEvidence: normalizedBeforeEvidence,
+            afterEvidence: normalizedAfterEvidence,
+            beforeImage: normalizedBeforeEvidence[0] || (payload as any).beforeImage || "",
+            afterImage: normalizedAfterEvidence[0] || (payload as any).afterImage || "",
             deviceRows: payload.deviceRows?.length ? payload.deviceRows : defaultValues.deviceRows,
             tools: payload.tools?.length ? payload.tools : defaultValues.tools,
             spareparts: payload.spareparts?.length ? payload.spareparts : defaultValues.spareparts,
@@ -376,9 +497,15 @@ export default function ReportForm() {
     async (values) => {
       setMessage(null);
       try {
+        const normalizedBeforeEvidence = normalizeEvidence((values as any).beforeEvidence ?? values.beforeImage);
+        const normalizedAfterEvidence = normalizeEvidence((values as any).afterEvidence ?? values.afterImage);
         const payloadForStorage = {
           ...values,
           problemPhotos,
+          beforeEvidence: normalizedBeforeEvidence,
+          afterEvidence: normalizedAfterEvidence,
+          beforeImage: normalizedBeforeEvidence[0] || values.beforeImage || "",
+          afterImage: normalizedAfterEvidence[0] || values.afterImage || "",
           storedAt: new Date().toISOString(),
         };
 
@@ -454,6 +581,8 @@ export default function ReportForm() {
     const firstDevice = deviceRowsWatch?.[0] || {};
     requireField(!!firstDevice.description?.trim(), "deviceRows.0.description" as any, "Device description");
 
+    requireField((selectedJobs || []).length > 0, "jobInfo" as any, "Job Information");
+
     requireField(!!serviceDescriptionWatch?.trim(), "serviceDescription", "Service Description / Analysis");
     requireField(!!travelStartWatch, "travelStart", "Travel start date");
     requireField(!!travelFinishWatch, "travelFinish", "Travel finish date");
@@ -488,10 +617,16 @@ export default function ReportForm() {
     const dateOnly = nowIso.split("T")[0];
 
     const currentValues = getValues();
+    const normalizedBeforeEvidence = normalizeEvidence((currentValues as any).beforeEvidence ?? (currentValues as any).beforeImage);
+    const normalizedAfterEvidence = normalizeEvidence((currentValues as any).afterEvidence ?? (currentValues as any).afterImage);
     const payloadForStorage = {
       ...currentValues,
       finalizedDate: dateOnly,
       problemPhotos,
+      beforeEvidence: normalizedBeforeEvidence,
+      afterEvidence: normalizedAfterEvidence,
+      beforeImage: normalizedBeforeEvidence[0] || (currentValues as any).beforeImage || "",
+      afterImage: normalizedAfterEvidence[0] || (currentValues as any).afterImage || "",
       storedAt: nowIso,
     };
 
@@ -517,6 +652,22 @@ export default function ReportForm() {
 
   return (
     <div className="space-y-8 pb-16 text-slate-900">
+      <ServiceReportPrintModal
+        open={printModalOpen}
+        snapshot={printSnapshot}
+        onClose={() => {
+          setPrintModalOpen(false);
+          setPrintModalAuto(false);
+        }}
+        formatDate={(value?: string) => formatLongDate(value || "")}
+        loading={false}
+        errorMessage={null}
+        autoPrint={printModalAuto}
+        onAutoPrintDone={() => {
+          setPrintModalAuto(false);
+          setPrintModalOpen(false);
+        }}
+      />
       <div className="no-print">
       {!id ? (
         <section className={sectionClass}>
@@ -683,11 +834,11 @@ export default function ReportForm() {
           </Field>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-4">
-            <Field label="Customer Ref">
+            {/* <Field label="Customer Ref">
               <input {...register("customerRef")}
                 className={`${inputClass} bg-slate-100 cursor-not-allowed`}
                 readOnly />
-            </Field>
+            </Field> */}
             <Field label="Phone No">
               <input {...register("phone")}
                 className={`${inputClass} bg-slate-100 cursor-not-allowed`}
@@ -698,48 +849,27 @@ export default function ReportForm() {
                 className={`${inputClass} bg-slate-100 cursor-not-allowed`}
                 readOnly />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Notif Open">
-                <div className={`${inputClass} bg-slate-100 text-slate-700`}>{notifOpenValue ? formatDisplayDate(notifOpenValue) : "-"}</div>
-              </Field>
-              <Field label="Date Finalized">
-                <input type="hidden" {...register("finalizedDate")} />
-                <div className={`${inputClass} bg-slate-100 text-slate-700`}>
-                  {finalizedDateValue ? formatDisplayDate(finalizedDateValue) : "-"}
-                </div>
-                {!finalizedDateValue && (
-                  <p className="mt-1 text-xs text-slate-500">Currently locked; will be set after completion.</p>
-                )}
-              </Field>
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold">Job Information</h3>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-3">
-              {jobOptions.map((option) => {
-                const active = selectedJobs.includes(option);
-                return (
-                  <div
-                    key={option}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${
-                      active ? "bg-slate-700 text-white" : "bg-white/70 text-slate-400"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center rounded border ${
-                        active ? "border-white bg-white" : "border-slate-300 bg-transparent"
-                      }`}
-                    >
-                      {active && <span className="h-2 w-2 rounded-sm bg-slate-700" />}
-                    </span>
-                    {option}
-                  </div>
-                );
-              })}
-            </div>
+            <Field label="Notif Open" required>
+              <input
+                type="date"
+                {...register("notifOpen")}
+                readOnly
+                className={`${inputClass} pr-10 bg-slate-100 cursor-not-allowed w-full`}
+              />
+            </Field>
+            <Field label="Date Finalized" className="w-full">
+              <input type="hidden" {...register("finalizedDate")} />
+              <input
+                type="text"
+                value={finalizedDateValue ? formatDisplayDate(finalizedDateValue) : ""}
+                readOnly
+                className={`${inputClass} pr-10 bg-slate-100 text-slate-500 placeholder:text-transparent w-full`}
+                placeholder=" "
+              />
+              {!finalizedDateValue && (
+                <p className="mt-1 text-xs text-slate-500">Currently locked; will be set after completion.</p>
+              )}
+            </Field>
           </div>
 
           <div className="mt-6">
@@ -770,6 +900,39 @@ export default function ReportForm() {
         </section>
 
         <section className={sectionClass}>
+          <div className="mb-6">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold">Job Information</h3>
+              <span className="text-red-500">*</span>
+            </div>
+            {errors.jobInfo && <p className="text-sm text-red-500">{(errors.jobInfo as any)?.message}</p>}
+            <div className="mt-3 flex flex-wrap gap-3">
+              {jobOptions.map((option) => {
+                const active = selectedJobs.includes(option);
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => toggleJob(option)}
+                    disabled={isFinalized}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${
+                      active ? "bg-slate-700 text-white" : "bg-white/70 text-slate-700"
+                    } ${isFinalized ? "cursor-not-allowed opacity-70" : "hover:bg-slate-100"}`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded border ${
+                        active ? "border-white bg-white" : "border-slate-500 bg-transparent"
+                      }`}
+                    >
+                      {active && <span className="h-2 w-2 rounded-sm bg-slate-700" />}
+                    </span>
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-semibold">Device Information</h3>
@@ -780,7 +943,10 @@ export default function ReportForm() {
               onClick={() =>
                 appendDevice({ partNo: "", description: "", serialNo: "", swVersion: "", location: "", workStart: "", workFinish: "" })
               }
-              className="flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+              disabled={isFinalized}
+              className={`flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2 text-sm font-semibold text-white ${
+                isFinalized ? "cursor-not-allowed opacity-60" : ""
+              }`}
             >
               <Plus className="h-4 w-4" />
               Add Table
@@ -1035,7 +1201,128 @@ export default function ReportForm() {
         </fieldset>
 
         <section className={sectionClass}>
-          <div className="grid gap-6 lg:grid-cols-[1.3fr,1fr]">
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold text-slate-900">Evidence Upload</h3>
+            <p className="mt-1 text-sm text-slate-600">Dokumentasikan kondisi sebelum dan sesudah pekerjaan.</p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Before Evidence</p>
+                <p className="text-xs font-semibold text-slate-400">{(beforeEvidenceValue || []).length}/6</p>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {(beforeEvidenceValue || []).length > 0 ? (
+                  (beforeEvidenceValue || []).map((src, index) => (
+                    <div key={`${src}-${index}`} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => openImagePreview(src, "Before Evidence")}
+                        className="block w-full"
+                        disabled={!src}
+                      >
+                        <img src={src} alt={`Before ${index + 1}`} className="h-32 w-full rounded-xl object-cover" />
+                      </button>
+                      {!isFinalized && (
+                        <button
+                          type="button"
+                          onClick={() => removeEvidenceAt("beforeEvidence", index)}
+                          className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+                    No image
+                  </div>
+                )}
+              </div>
+
+              {(beforeEvidenceValue || []).length > 0 && (
+                <p className="mt-2 text-xs text-slate-500">Click for detail image</p>
+              )}
+
+              <label
+                className={`mt-3 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                  isFinalized ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+                }`}
+              >
+                Upload Before
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleEvidenceUpload("beforeEvidence")}
+                  disabled={isFinalized || (beforeEvidenceValue || []).length >= 6}
+                />
+              </label>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">After Evidence</p>
+                <p className="text-xs font-semibold text-slate-400">{(afterEvidenceValue || []).length}/6</p>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {(afterEvidenceValue || []).length > 0 ? (
+                  (afterEvidenceValue || []).map((src, index) => (
+                    <div key={`${src}-${index}`} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => openImagePreview(src, "After Evidence")}
+                        className="block w-full"
+                        disabled={!src}
+                      >
+                        <img src={src} alt={`After ${index + 1}`} className="h-32 w-full rounded-xl object-cover" />
+                      </button>
+                      {!isFinalized && (
+                        <button
+                          type="button"
+                          onClick={() => removeEvidenceAt("afterEvidence", index)}
+                          className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+                    No image
+                  </div>
+                )}
+              </div>
+
+              {(afterEvidenceValue || []).length > 0 && (
+                <p className="mt-2 text-xs text-slate-500">Click for detail image</p>
+              )}
+
+              <label
+                className={`mt-3 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                  isFinalized ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+                }`}
+              >
+                Upload After
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleEvidenceUpload("afterEvidence")}
+                  disabled={isFinalized || (afterEvidenceValue || []).length >= 6}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-[1.3fr,1fr]">
             <div className="space-y-4">
               <fieldset disabled={isFinalized} className="space-y-4">
                 <div className="rounded-2xl border border-slate-700/40 bg-white/80 p-4">
@@ -1171,13 +1458,6 @@ export default function ReportForm() {
             </div>
           </div>
 
-              <Field label="Change Note" className="mt-6">
-                <textarea
-                  {...register("changedNote")}
-                  readOnly={isFinalized}
-                  className={`${inputClass} min-h-[100px] ${isFinalized ? "bg-slate-100 cursor-not-allowed" : ""}`}
-                />
-              </Field>
             </section>
             {message && <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</p>}
           </form>
@@ -1234,6 +1514,35 @@ export default function ReportForm() {
                 <br />
                 {surveyLink}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {imagePreviewOpen && imagePreviewSrc && (
+        <div
+          className="fixed inset-0 z-[1400] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm px-4"
+          onClick={closeImagePreview}
+        >
+          <div
+            className="w-full max-w-5xl rounded-3xl bg-white p-4 shadow-2xl shadow-slate-900/30"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 px-2 pb-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Detail Image</p>
+                <p className="text-lg font-semibold text-slate-900">{imagePreviewTitle}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeImagePreview}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300"
+              >
+                Close
+              </button>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              <img src={imagePreviewSrc} alt={imagePreviewTitle} className="max-h-[70vh] w-full object-contain" />
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import logoKms from "../../assets/logo kms.png";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -28,7 +28,10 @@ export type PrintableReport = {
   approvedSignature?: string;
   travelStartTime?: string;
   travelFinishTime?: string;
+  beforeEvidence?: string[];
+  afterEvidence?: string[];
   spareparts?: { qty?: string; partNo?: string; description?: string; status?: string }[];
+  tools?: { code?: string; description?: string; usableLimit?: string }[];
   deviceRows?: {
     partNo?: string;
     description?: string;
@@ -261,11 +264,51 @@ function DefinitionGrid({ rows, columns = 1 }: { rows: { label: string; value: s
   );
 }
 
-function PageContainer({ children, meta, isLast }: { children: React.ReactNode; meta: React.ReactNode; isLast?: boolean }) {
+function PageContainer({
+  children,
+  meta,
+  isLast,
+}: {
+  children: React.ReactNode;
+  meta: React.ReactNode;
+  isLast?: boolean;
+}) {
+  const contentOuterRef = useRef<HTMLDivElement | null>(null);
+  const contentInnerRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const outer = contentOuterRef.current;
+    const inner = contentInnerRef.current;
+    if (!outer || !inner) return;
+
+    const compute = () => {
+      const available = outer.clientHeight;
+      const needed = inner.scrollHeight;
+      if (!available || !needed) return;
+      const next = Math.min(1, available / needed);
+      setScale((prev) => {
+        const rounded = Math.round(next * 1000) / 1000;
+        return Math.abs(prev - rounded) < 0.001 ? prev : rounded;
+      });
+    };
+
+    compute();
+    requestAnimationFrame(compute);
+  }, [children]);
+
   return (
     <div
       className="print-preview-page mx-auto rounded-[18px] border border-[#c9cfe0] bg-white px-9 py-6"
-      style={{ width: "793.7px", height: "1122.5px", pageBreakAfter: isLast ? "auto" : "always", pageBreakInside: "avoid", display: "flex", flexDirection: "column", gap: "20px" }}
+      style={{
+        width: "793.7px",
+        height: "1122.5px",
+        pageBreakAfter: isLast ? "auto" : "always",
+        pageBreakInside: "avoid",
+        display: "flex",
+        flexDirection: "column",
+        gap: "20px",
+      }}
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[#e3e6f0] pb-4">
         <div className="flex items-center gap-4">
@@ -278,13 +321,29 @@ function PageContainer({ children, meta, isLast }: { children: React.ReactNode; 
         </div>
         <div className="text-right text-xs font-semibold text-[#7b8097]">{meta}</div>
       </header>
-      <div className="flex-1 space-y-4 overflow-hidden">{children}</div>
+
+      <div ref={contentOuterRef} className="relative flex-1 overflow-hidden">
+        <div
+          ref={contentInnerRef}
+          className="space-y-4"
+          style={{
+            transformOrigin: "top left",
+            transform: `scale(${scale})`,
+            width: scale < 1 ? `${100 / scale}%` : "100%",
+          }}
+        >
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
 
 function PrintPageOne({ snapshot, formatDate }: { snapshot: PrintableReport; formatDate: (value?: string) => string }) {
   const primaryDevice = snapshot.deviceRows?.[0];
+  const beforeEvidence = snapshot.beforeEvidence || [];
+  const afterEvidence = snapshot.afterEvidence || [];
+  const evidenceCount = beforeEvidence.length + afterEvidence.length;
 
   const customerInfo = useMemo(
     () => [
@@ -343,12 +402,42 @@ function PrintPageOne({ snapshot, formatDate }: { snapshot: PrintableReport; for
       <SectionCard title="Activity">
         <DefinitionGrid rows={activityRows} columns={1} />
       </SectionCard>
+
+      <SectionCard title="Evidence">
+        {evidenceCount === 0 ? (
+          <div className="min-h-[90px] rounded-2xl border border-dashed border-[#cfd4e4] bg-white" />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">Before</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {beforeEvidence.slice(0, 6).map((src, idx) => (
+                  <div key={`before-${idx}`} className="overflow-hidden rounded-lg border border-[#e3e6f0] bg-white">
+                    <img src={src} alt={`Before ${idx + 1}`} className="h-14 w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">After</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {afterEvidence.slice(0, 6).map((src, idx) => (
+                  <div key={`after-${idx}`} className="overflow-hidden rounded-lg border border-[#e3e6f0] bg-white">
+                    <img src={src} alt={`After ${idx + 1}`} className="h-14 w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </SectionCard>
     </PageContainer>
   );
 }
 
 function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; formatDate: (value?: string) => string }) {
   const materials = snapshot.spareparts?.length ? snapshot.spareparts : [{ qty: "", partNo: "", description: "", status: "" }];
+  const tools = snapshot.tools?.length ? snapshot.tools : [{ code: "", description: "", usableLimit: "" }];
 
   return (
     <PageContainer
@@ -376,6 +465,34 @@ function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; for
               {snapshot.travelStartTime && snapshot.travelFinishTime ? `${snapshot.travelStartTime} - ${snapshot.travelFinishTime}` : "-"}
             </p>
           </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Tools">
+        <div className="overflow-hidden rounded-2xl border border-[#e3e6f0]">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[160px]" />
+              <col className="w-[*]" />
+              <col className="w-[160px]" />
+            </colgroup>
+            <thead className="bg-[#f4f6fb] text-left text-[11px] font-semibold uppercase tracking-[0.3em] text-[#7b8097]">
+              <tr>
+                <th className="border-b border-[#e3e6f0] px-4 py-2">Code/SN</th>
+                <th className="border-b border-[#e3e6f0] px-4 py-2">Description</th>
+                <th className="border-b border-[#e3e6f0] px-4 py-2">Usable limits</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tools.slice(0, 6).map((item, index) => (
+                <tr key={`tool-${index}`} className="border-t border-[#eef1f8]">
+                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.code || "-"}</td>
+                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.description || "-"}</td>
+                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.usableLimit || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </SectionCard>
 

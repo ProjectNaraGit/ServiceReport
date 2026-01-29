@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrReportNotFound = errors.New("report not found")
+	ErrReportForbidden = errors.New("report forbidden")
 )
 
 // Service encapsulates business logic for service reports.
@@ -23,11 +24,14 @@ type Service struct {
 
 func (s *Service) GetForTechnician(ctx context.Context, reportID, teknisiID uint64) (*ServiceReport, error) {
 	var report ServiceReport
-	if err := s.db.WithContext(ctx).Where("id = ? AND teknisi_id = ?", reportID, teknisiID).First(&report).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&report, reportID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrReportNotFound
 		}
 		return nil, err
+	}
+	if report.TeknisiID == nil || *report.TeknisiID != teknisiID {
+		return nil, ErrReportForbidden
 	}
 	return &report, nil
 }
