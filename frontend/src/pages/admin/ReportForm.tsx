@@ -556,14 +556,19 @@ export default function ReportForm() {
               <h3 className="text-lg font-semibold">Report Problem</h3>
               <span className="text-sm text-red-500">*</span>
             </div>
+            <p className="mt-1 text-xs text-slate-500">Klik gambar untuk preview image</p>
             <div className="mt-3 grid gap-4 md:grid-cols-2">
               {problemPhotos.map((photo, index) => (
                 <div key={index} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <img src={resolveMediaUrl(photo)} alt={`Problem ${index + 1}`} className="h-48 w-full object-cover" />
+                  <button
+                    type="button"
+                    className="block w-full"
+                    onClick={() => openProblemPreview(photo, index)}
+                    title="Klik untuk preview"
+                  >
+                    <img src={resolveMediaUrl(photo)} alt={`Problem ${index + 1}`} className="h-48 w-full object-cover" />
+                  </button>
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-slate-900/55 px-4 py-2 text-xs text-white">
-                    <button type="button" className="flex-1 text-left font-semibold tracking-wide" onClick={() => openProblemPreview(photo, index)}>
-                      Preview
-                    </button>
                     <button
                       type="button"
                       className="rounded-full bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow"

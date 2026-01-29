@@ -40,6 +40,11 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
+	if !db.Migrator().HasIndex(&report.ServiceReport{}, "idx_opened_at") {
+		if err := db.Migrator().CreateIndex(&report.ServiceReport{}, "idx_opened_at"); err != nil {
+			return err
+		}
+	}
 	if !db.Migrator().HasIndex(&report.ServiceReport{}, "idx_teknisi_opened_at") {
 		if err := db.Migrator().CreateIndex(&report.ServiceReport{}, "idx_teknisi_opened_at"); err != nil {
 			return err

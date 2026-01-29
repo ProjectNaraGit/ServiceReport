@@ -256,7 +256,7 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]ServiceReport,
 		query = query.Where("admin_id = ?", *filter.AdminID)
 	}
 	var reports []ServiceReport
-	if err := query.Order("opened_at DESC").Find(&reports).Error; err != nil {
+	if err := query.Order("opened_at DESC").Limit(200).Find(&reports).Error; err != nil {
 		return nil, err
 	}
 	return reports, nil

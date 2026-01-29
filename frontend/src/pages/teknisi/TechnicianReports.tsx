@@ -182,6 +182,7 @@ export default function ReportForm() {
   const [printModalAuto, setPrintModalAuto] = useState(false);
   const [printSnapshot, setPrintSnapshot] = useState<PrintableReport | null>(null);
   const [attachments, setAttachments] = useState<NonNullable<ReportDetail["attachments"]>>([]);
+  const [selectedPrintAttachmentId, setSelectedPrintAttachmentId] = useState<number | null>(null);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [finalizeFeedback, setFinalizeFeedback] = useState<{ status: "success" | "error"; message: string } | null>(null);
@@ -417,6 +418,24 @@ export default function ReportForm() {
     }
     setMessage(null);
 
+    void attachments;
+
+    let attachmentPdfUrl: string | undefined;
+    let attachmentPdfName: string | undefined;
+
+    if (selectedPrintAttachmentId && id) {
+      const selected = attachments.find((att, idx) => ((att.id ?? att.ID ?? idx) as number) === selectedPrintAttachmentId);
+      const fileName = selected?.file_name ?? selected?.FileName;
+      if (fileName && fileName.toLowerCase().endsWith(".pdf")) {
+        const base = (api.defaults.baseURL || "").replace(/\/$/, "");
+        attachmentPdfUrl = `${base}/teknisi/reports/${id}/attachments/${selectedPrintAttachmentId}/download`;
+        attachmentPdfName = fileName;
+      }
+    }
+
+    const normalizedBeforeEvidence = normalizeEvidence(beforeEvidenceValue);
+    const normalizedAfterEvidence = normalizeEvidence(afterEvidenceValue);
+
     const snapshot: PrintableReport = {
       dispatchNo: dispatchNoValue,
       dispatchDate: dispatchDateValue,
@@ -442,15 +461,17 @@ export default function ReportForm() {
       approvedSignature,
       travelStartTime: travelStartTimeWatch,
       travelFinishTime: travelFinishTimeWatch,
-      beforeEvidence: beforeEvidenceValue || [],
-      afterEvidence: afterEvidenceValue || [],
+      beforeEvidence: normalizedBeforeEvidence,
+      afterEvidence: normalizedAfterEvidence,
+      attachmentPdfUrl,
+      attachmentPdfName,
       spareparts: spareRowsWatch,
       tools: toolRowsWatch,
       deviceRows: deviceRowsWatch,
     };
 
     setPrintSnapshot(snapshot);
-    setPrintModalAuto(true);
+    setPrintModalAuto(!attachmentPdfUrl);
     setPrintModalOpen(true);
   };
 
@@ -958,15 +979,22 @@ export default function ReportForm() {
               <h3 className="text-lg font-semibold">Report Problem</h3>
               <span className="text-sm text-slate-500">{problemPhotos.length}/6</span>
             </div>
+            {problemPhotos.length > 0 && (
+              <p className="mt-1 text-xs text-slate-500">Klik gambar untuk preview image</p>
+            )}
             <div className="mt-3 flex flex-wrap gap-4">
               {problemPhotos.length > 0 ? (
                 problemPhotos.map((photo, index) => (
                   <div key={index} className="relative w-full max-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <img src={resolveMediaUrl(photo)} alt={`Problem ${index + 1}`} className="h-28 w-full object-cover" />
+                    <button
+                      type="button"
+                      className="block w-full"
+                      onClick={() => openPreview(photo, `Problem Photo ${index + 1}`)}
+                      title="Klik untuk preview"
+                    >
+                      <img src={resolveMediaUrl(photo)} alt={`Problem ${index + 1}`} className="h-28 w-full object-cover" />
+                    </button>
                     <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-slate-900/55 px-4 py-2 text-xs text-white">
-                      <button type="button" className="flex-1 text-left font-semibold tracking-wide" onClick={() => openPreview(photo, `Problem Photo ${index + 1}`)}>
-                        Preview
-                      </button>
                       {!isFinalized && (
                         <button
                           type="button"
@@ -1305,6 +1333,7 @@ export default function ReportForm() {
           <div className="mb-6">
             <h3 className="text-xl font-semibold text-slate-900">Evidence Upload</h3>
             <p className="mt-1 text-sm text-slate-600">Dokumentasikan kondisi sebelum dan sesudah pekerjaan.</p>
+            <p className="mt-1 text-xs text-slate-500">Klik gambar untuk preview image</p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -1318,15 +1347,15 @@ export default function ReportForm() {
                 {(beforeEvidenceValue || []).length > 0 ? (
                   (beforeEvidenceValue || []).map((src, index) => (
                     <div key={`${src}-${index}`} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      <img src={resolveMediaUrl(src)} alt={`Before evidence ${index + 1}`} className="h-40 w-full object-cover" />
+                      <button
+                        type="button"
+                        className="block w-full"
+                        onClick={() => openPreview(src, `Before Evidence ${index + 1}`)}
+                        title="Klik untuk preview"
+                      >
+                        <img src={resolveMediaUrl(src)} alt={`Before evidence ${index + 1}`} className="h-40 w-full object-cover" />
+                      </button>
                       <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/45 px-3 py-2 text-xs text-white">
-                        <button
-                          type="button"
-                          onClick={() => openPreview(src, `Before Evidence ${index + 1}`)}
-                          className="flex-1 text-left font-semibold tracking-wide"
-                        >
-                          Preview
-                        </button>
                         {!isFinalized && (
                           <button
                             type="button"
@@ -1373,15 +1402,15 @@ export default function ReportForm() {
                 {(afterEvidenceValue || []).length > 0 ? (
                   (afterEvidenceValue || []).map((src, index) => (
                     <div key={`${src}-${index}`} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      <img src={resolveMediaUrl(src)} alt={`After evidence ${index + 1}`} className="h-40 w-full object-cover" />
+                      <button
+                        type="button"
+                        className="block w-full"
+                        onClick={() => openPreview(src, `After Evidence ${index + 1}`)}
+                        title="Klik untuk preview"
+                      >
+                        <img src={resolveMediaUrl(src)} alt={`After evidence ${index + 1}`} className="h-40 w-full object-cover" />
+                      </button>
                       <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/45 px-3 py-2 text-xs text-white">
-                        <button
-                          type="button"
-                          onClick={() => openPreview(src, `After Evidence ${index + 1}`)}
-                          className="flex-1 text-left font-semibold tracking-wide"
-                        >
-                          Preview
-                        </button>
                         {!isFinalized && (
                           <button
                             type="button"
@@ -1441,11 +1470,21 @@ export default function ReportForm() {
                       </tr>
                       <tr>
                         <td className="border border-slate-700/40 px-3 py-4">
-                          <SignaturePad label="Service Engineer Signature" value={carriedSignature} onChange={(data) => setValue("carriedSignature", data)} />
+                          <SignaturePad
+                            label="Service Engineer Signature"
+                            value={carriedSignature}
+                            onChange={(data) => setValue("carriedSignature", data)}
+                            disabled={isFinalized}
+                          />
                           {!carriedSignature && <p className="mt-2 text-xs font-semibold text-red-500">Service engineer signature is required</p>}
                         </td>
                         <td className="border border-slate-700/40 px-3 py-4">
-                          <SignaturePad label="Customer Signature" value={approvedSignature} onChange={(data) => setValue("approvedSignature", data)} />
+                          <SignaturePad
+                            label="Customer Signature"
+                            value={approvedSignature}
+                            onChange={(data) => setValue("approvedSignature", data)}
+                            disabled={isFinalized}
+                          />
                           {!approvedSignature && <p className="mt-2 text-xs font-semibold text-red-500">Customer signature is required</p>}
                         </td>
                       </tr>
@@ -1564,10 +1603,29 @@ export default function ReportForm() {
                   attachments.map((att, idx) => {
                     const attId = (att.id ?? att.ID ?? idx) as number;
                     const fileName = att.file_name ?? att.FileName ?? "Lampiran";
+                    const isPdf = fileName.toLowerCase().endsWith(".pdf");
                     const size = att.size ?? att.Size;
                     const createdAt = att.created_at ?? att.CreatedAt;
                     return (
-                      <div key={`att-${attId}-${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                      <div
+                        key={`att-${attId}-${idx}`}
+                        className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-3 ${
+                          selectedPrintAttachmentId === attId ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                        } ${isPdf && isFinalized ? "cursor-pointer" : ""}`}
+                        onClick={() => {
+                          if (!isPdf || !isFinalized) return;
+                          setSelectedPrintAttachmentId((prev) => (prev === attId ? null : attId));
+                        }}
+                        role={isPdf && isFinalized ? "button" : undefined}
+                        tabIndex={isPdf && isFinalized ? 0 : undefined}
+                        onKeyDown={(e) => {
+                          if (!isPdf || !isFinalized) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedPrintAttachmentId((prev) => (prev === attId ? null : attId));
+                          }
+                        }}
+                      >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-900">{fileName}</p>
                           <p className="text-xs text-slate-500">
@@ -1576,6 +1634,22 @@ export default function ReportForm() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
+                          {isPdf && (
+                            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedPrintAttachmentId === attId}
+                                onChange={() =>
+                                  setSelectedPrintAttachmentId((prev) => {
+                                    if (prev === attId) return null;
+                                    return attId;
+                                  })
+                                }
+                                disabled={!isFinalized}
+                              />
+                              Print
+                            </label>
+                          )}
                           {user?.role === "TEKNISI" && !isFinalized && (
                             <button
                               type="button"
@@ -1999,7 +2073,17 @@ function Field({
   );
 }
 
-function SignaturePad({ label, value, onChange }: { label: string; value: string; onChange: (dataUrl: string) => void }) {
+function SignaturePad({
+  label,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (dataUrl: string) => void;
+  disabled?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
@@ -2061,6 +2145,7 @@ function SignaturePad({ label, value, onChange }: { label: string; value: string
   };
 
   const clearCanvas = () => {
+    if (disabled) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -2076,26 +2161,35 @@ function SignaturePad({ label, value, onChange }: { label: string; value: string
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-700">
         <span>{label}</span>
-        <button type="button" className="text-slate-500 underline" onClick={clearCanvas}>
+        <button type="button" className="text-slate-500 underline disabled:opacity-60" onClick={clearCanvas} disabled={disabled}>
           Clear
         </button>
       </div>
       <canvas
         ref={canvasRef}
-        className="h-32 w-full cursor-crosshair rounded-xl border border-dashed border-slate-300 bg-white"
+        className={`h-32 w-full rounded-xl border border-dashed border-slate-300 bg-white ${disabled ? "cursor-not-allowed opacity-70" : "cursor-crosshair"}`}
+        style={disabled ? { pointerEvents: "none" } : undefined}
         onPointerDown={(event) => {
+          if (disabled) return;
           isDrawing.current = true;
           const canvas = canvasRef.current;
           if (canvas) canvas.setPointerCapture(event.pointerId);
           draw(event);
         }}
-        onPointerMove={draw}
+        onPointerMove={(event) => {
+          if (disabled) return;
+          draw(event);
+        }}
         onPointerUp={(event) => {
+          if (disabled) return;
           const canvas = canvasRef.current;
           if (canvas) canvas.releasePointerCapture(event.pointerId);
           handlePointerUp();
         }}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={() => {
+          if (disabled) return;
+          handlePointerUp();
+        }}
       />
     </div>
   );

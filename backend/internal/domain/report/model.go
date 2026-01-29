@@ -21,7 +21,7 @@ type ServiceReport struct {
 	Complaint       string         `gorm:"type:text" json:"complaint"`
 	ActionTaken     string         `gorm:"type:text" json:"action_taken"`
 	Status          string         `gorm:"type:enum('open','progress','done');default:'open';index:idx_status_opened_at,priority:1" json:"status"`
-	OpenedAt        time.Time      `gorm:"autoCreateTime;index:idx_status_opened_at,priority:2;index:idx_teknisi_opened_at,priority:2" json:"opened_at"`
+	OpenedAt        time.Time      `gorm:"autoCreateTime;index:idx_opened_at,priority:1;index:idx_status_opened_at,priority:2;index:idx_teknisi_opened_at,priority:2" json:"opened_at"`
 	UpdatedAt       time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
 	CompletedAt     *time.Time     `json:"completed_at"`
 	FormPayload     datatypes.JSON `gorm:"type:json" json:"form_payload"`

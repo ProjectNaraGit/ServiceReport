@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import logoKms from "../../assets/logo kms.png";
+import qrSurvey from "../../assets/qrSurvey.svg";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { PDFDocument } from "pdf-lib";
+import { resolveMediaUrl } from "../../lib/media";
 
 export type PrintableReport = {
   dispatchNo?: string;
@@ -30,6 +33,8 @@ export type PrintableReport = {
   travelFinishTime?: string;
   beforeEvidence?: string[];
   afterEvidence?: string[];
+  attachmentPdfUrl?: string;
+  attachmentPdfName?: string;
   spareparts?: { qty?: string; partNo?: string; description?: string; status?: string }[];
   tools?: { code?: string; description?: string; usableLimit?: string }[];
   deviceRows?: {
@@ -65,9 +70,28 @@ export default function ServiceReportPrintModal({
   onAutoPrintDone,
 }: Props) {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+  const [printReady, setPrintReady] = useState(false);
+  const [isMergingPdf, setIsMergingPdf] = useState(false);
+  const [mergedPdfUrl, setMergedPdfUrl] = useState<string | null>(null);
+  const [mergedPdfError, setMergedPdfError] = useState<string | null>(null);
   const printAreaRef = useRef<HTMLDivElement | null>(null);
+  const preparedPortalRef = useRef<HTMLElement | null>(null);
+  const mergedFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const ready = !!snapshot && !loading && !errorMessage;
+
+  const resolvePrintImageSrc = (input: string) => {
+    if (!input) return input;
+    const trimmed = input.trim();
+    if (!trimmed) return trimmed;
+    if (trimmed.startsWith("data:")) return trimmed;
+    if (/^(https?:)?\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith("/src/") || trimmed.startsWith("/assets/")) {
+      return `${window.location.origin}${trimmed}`;
+    }
+    return resolveMediaUrl(trimmed) || trimmed;
+  };
 
 
   const handleDownloadPdf = async () => {
@@ -100,8 +124,116 @@ export default function ServiceReportPrintModal({
     }
   };
 
+  const generateReportPdfBytes = async (root: HTMLElement): Promise<ArrayBuffer | null> => {
+    const pages = Array.from(root.querySelectorAll(".print-preview-page")) as HTMLElement[];
+    if (pages.length === 0) return null;
+
+    const pdf = new jsPDF("portrait", "pt", "a4");
+    for (let i = 0; i < pages.length; i += 1) {
+      const canvas = await html2canvas(pages[i], {
+        backgroundColor: "#ffffff",
+        scale: 3,
+        useCORS: false,
+        windowWidth: pages[i].scrollWidth,
+        windowHeight: pages[i].scrollHeight,
+      });
+      const imgData = canvas.toDataURL("image/png", 1.0);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
+      if (i < pages.length - 1) pdf.addPage();
+    }
+    return pdf.output("arraybuffer");
+  };
+
+  const buildMergedPdfUrl = async (
+    attachmentUrl: string,
+    attachmentName?: string
+  ): Promise<string | null> => {
+    if (!ready || !printAreaRef.current) return null;
+    setIsMergingPdf(true);
+    try {
+      const reportRoot = preparedPortalRef.current ?? printAreaRef.current;
+      if (!reportRoot) {
+        setMergedPdfError("Failed to prepare report layout for PDF.");
+        return null;
+      }
+
+      const reportBytes = await generateReportPdfBytes(reportRoot);
+      if (!reportBytes) {
+        setMergedPdfError("Failed to generate report PDF.");
+        return null;
+      }
+
+      const attRes = await fetch(attachmentUrl, { credentials: "include", cache: "no-store" });
+      if (!attRes.ok) {
+        console.warn("[print] failed to fetch attachment pdf", { url: attachmentUrl, status: attRes.status });
+        setMergedPdfError(`Failed to fetch attachment PDF (HTTP ${attRes.status}).`);
+        return null;
+      }
+      const contentType = attRes.headers.get("content-type") || "";
+      const attBytes = await attRes.arrayBuffer();
+
+      if (!contentType.toLowerCase().includes("pdf") && attBytes.byteLength < 10_000) {
+        console.warn("[print] attachment response does not look like a PDF", { url: attachmentUrl, contentType, size: attBytes.byteLength });
+      }
+
+      const merged = await PDFDocument.create();
+
+      const reportDoc = await PDFDocument.load(reportBytes);
+      const reportPages = await merged.copyPages(reportDoc, reportDoc.getPageIndices());
+      reportPages.forEach((p: any) => merged.addPage(p));
+
+      const attDoc = await PDFDocument.load(attBytes);
+      const attPages = await merged.copyPages(attDoc, attDoc.getPageIndices());
+      attPages.forEach((p: any) => merged.addPage(p));
+
+      const mergedBytes = await merged.save();
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
+
+      void attachmentName;
+      return blobUrl;
+    } catch (err) {
+      console.error("[print] merge failed", err);
+      setMergedPdfError("Merge failed. Check console for details.");
+      return null;
+    } finally {
+      setIsMergingPdf(false);
+    }
+  };
+
+  const handleMergedPrint = async () => {
+    if (!snapshot?.attachmentPdfUrl) return;
+    setMergedPdfError(null);
+
+    if (mergedPdfUrl) {
+      try {
+        mergedFrameRef.current?.contentWindow?.focus();
+        mergedFrameRef.current?.contentWindow?.print();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const url = await buildMergedPdfUrl(snapshot.attachmentPdfUrl, snapshot.attachmentPdfName);
+    if (!url) return;
+    setMergedPdfUrl(url);
+    // printing is a user gesture already; wait a moment for iframe to render.
+    setTimeout(() => {
+      try {
+        mergedFrameRef.current?.contentWindow?.focus();
+        mergedFrameRef.current?.contentWindow?.print();
+      } catch {
+        // ignore
+      }
+    }, 400);
+  };
+
   useEffect(() => {
     if (!autoPrint) return;
+    if (snapshot?.attachmentPdfUrl) return;
     let cancelled = false;
 
     const waitAndPrint = () => {
@@ -122,21 +254,56 @@ export default function ServiceReportPrintModal({
   }, [autoPrint, ready, snapshot]);
 
   const ensurePrintStyles = () => {
-    if (document.getElementById("report-print-style")) return;
-    const style = document.createElement("style");
+    const existing = document.getElementById("report-print-style") as HTMLStyleElement | null;
+    const style = existing ?? document.createElement("style");
     style.id = "report-print-style";
     style.innerHTML = `
       @page { size: A4 portrait; margin: 0; }
       @media print {
         body { background: #ffffff !important; }
-        #report-print-root { display: block !important; }
+        #report-print-root {
+          display: block !important;
+          position: static !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: auto !important;
+          height: auto !important;
+          opacity: 1 !important;
+          pointer-events: auto !important;
+          overflow: visible !important;
+        }
         body > *:not(#report-print-root) { display: none !important; }
+
+        .print-pages {
+          display: block !important;
+          gap: 0 !important;
+        }
+
+        .print-preview-page {
+          box-sizing: border-box !important;
+          width: 210mm !important;
+          height: 297mm !important;
+          margin: 0 !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
       }
       @media screen {
-        #report-print-root { display: none; }
+        #report-print-root {
+          position: fixed;
+          left: -10000px;
+          top: 0;
+          width: 820px;
+          height: auto;
+          opacity: 0;
+          pointer-events: none;
+          overflow: visible;
+        }
       }
     `;
-    document.head.appendChild(style);
+    if (!existing) document.head.appendChild(style);
   };
 
   const mountPrintPortal = () => {
@@ -152,23 +319,162 @@ export default function ServiceReportPrintModal({
     portal.style.padding = "0";
     const clone = printAreaRef.current.cloneNode(true) as HTMLElement;
     clone.style.margin = "0 auto";
+
+    const images = Array.from(clone.querySelectorAll("img")) as HTMLImageElement[];
+    for (const img of images) {
+      const raw = img.getAttribute("src") || "";
+      const resolved = resolvePrintImageSrc(raw);
+      img.setAttribute("loading", "eager");
+      img.setAttribute("decoding", "sync");
+      if (resolved && resolved !== raw) {
+        img.setAttribute("src", resolved);
+      }
+    }
+
     portal.appendChild(clone);
     document.body.appendChild(portal);
     return portal;
   };
 
+  const blobToDataUrl = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to read blob"));
+      reader.readAsDataURL(blob);
+    });
+
+  const inlinePortalImages = async (root: HTMLElement) => {
+    const images = Array.from(root.querySelectorAll("img")) as HTMLImageElement[];
+    if (images.length === 0) return;
+
+    await Promise.all(
+      images.map(async (img) => {
+        const raw = img.getAttribute("src") || "";
+        const resolved = resolvePrintImageSrc(raw);
+        if (!resolved || resolved.startsWith("data:")) return;
+
+        try {
+          const res = await fetch(resolved, { credentials: "include", cache: "no-store" });
+          if (!res.ok) {
+            console.warn("[print] failed to fetch image", { url: resolved, status: res.status });
+            return;
+          }
+          const blob = await res.blob();
+          const dataUrl = await blobToDataUrl(blob);
+          if (dataUrl) {
+            img.setAttribute("src", dataUrl);
+          }
+        } catch {
+          console.warn("[print] failed to inline image", { url: resolved });
+        }
+      })
+    );
+  };
+
+  const waitForImages = async (root: HTMLElement) => {
+    const images = Array.from(root.querySelectorAll("img")) as HTMLImageElement[];
+    if (images.length === 0) return;
+
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete && img.naturalWidth > 0) {
+              resolve();
+              return;
+            }
+            const done = () => resolve();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+          })
+      )
+    );
+  };
+
   const handleChromePrint = (afterPrint?: () => void) => {
     if (!ready || !printAreaRef.current) return;
-    const portal = mountPrintPortal();
+
+    if (snapshot?.attachmentPdfUrl) {
+      // merged printing is handled inside the modal (no new tab).
+      void afterPrint;
+      return;
+    }
+
+    const portal = preparedPortalRef.current;
     if (!portal) return;
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
+
+    const cleanup = () => {
+      try {
         portal.remove();
-        afterPrint?.();
-      }, 120);
-    }, 200);
+      } catch {
+        // ignore
+      }
+      preparedPortalRef.current = null;
+      setPrintReady(false);
+      afterPrint?.();
+    };
+
+    const onAfterPrint = () => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      cleanup();
+    };
+
+    window.addEventListener("afterprint", onAfterPrint);
+    window.print();
+
+    // Fallback: some browsers don't fire afterprint reliably.
+    setTimeout(() => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      if (preparedPortalRef.current) cleanup();
+    }, 5000);
   };
+
+  useEffect(() => {
+    if (!open) {
+      if (preparedPortalRef.current) {
+        preparedPortalRef.current.remove();
+        preparedPortalRef.current = null;
+      }
+      if (mergedPdfUrl) {
+        URL.revokeObjectURL(mergedPdfUrl);
+      }
+      setMergedPdfUrl(null);
+      setMergedPdfError(null);
+      setPrintReady(false);
+      setIsPreparingPrint(false);
+      setIsGeneratingPdf(false);
+      return;
+    }
+    if (!ready || !printAreaRef.current) return;
+
+    let cancelled = false;
+    setIsPreparingPrint(true);
+    setPrintReady(false);
+
+    const portal = mountPrintPortal();
+    if (!portal) {
+      setIsPreparingPrint(false);
+      return;
+    }
+    preparedPortalRef.current = portal;
+
+    (async () => {
+      await inlinePortalImages(portal);
+      await waitForImages(portal);
+      if (cancelled) return;
+      setPrintReady(true);
+      setIsPreparingPrint(false);
+      if (autoPrint && !snapshot?.attachmentPdfUrl) {
+        handleChromePrint(() => onAutoPrintDone?.());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, ready, snapshot]);
 
   if (!open) return null;
 
@@ -183,15 +489,29 @@ export default function ServiceReportPrintModal({
             <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Print Preview</p>
             <h3 className="text-2xl font-semibold text-slate-900">Service Report PDF</h3>
             <p className="text-sm text-slate-500">Layout dua halaman sesuai template.</p>
+            {snapshot?.attachmentPdfUrl && (
+              <p className="mt-2 text-xs font-semibold text-slate-600">
+                Lampiran untuk merge:
+                <span className="ml-2 rounded-full bg-slate-100 px-3 py-1 text-slate-800">
+                  {snapshot.attachmentPdfName || "PDF"}
+                </span>
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => handleChromePrint()}
-              disabled={!ready || isGeneratingPdf}
+              onClick={() => {
+                if (snapshot?.attachmentPdfUrl) {
+                  void handleMergedPrint();
+                } else {
+                  handleChromePrint();
+                }
+              }}
+              disabled={!ready || isGeneratingPdf || isMergingPdf || isPreparingPrint || !printReady}
               className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Print
+              {snapshot?.attachmentPdfUrl ? "Print + Lampiran" : "Print"}
             </button>
             <button
               type="button"
@@ -215,12 +535,51 @@ export default function ServiceReportPrintModal({
         <div className="mt-6 max-h-[70vh] overflow-y-auto rounded-[28px] bg-slate-100 p-6">
           {loading && <p className="text-center text-sm font-semibold text-slate-600">Memuat detail laporan...</p>}
           {!loading && errorMessage && <p className="text-center text-sm font-semibold text-red-500">{errorMessage}</p>}
-          {ready && (
-            <div ref={printAreaRef} className="flex flex-col gap-8">
-              <PrintPageOne snapshot={snapshot} formatDate={formatDate} />
-              <PrintPageTwo snapshot={snapshot} formatDate={formatDate} />
-            </div>
-          )}
+          <div className="mt-6 overflow-hidden rounded-[24px] bg-slate-50 p-4">
+            {snapshot?.attachmentPdfUrl ? (
+              <div className="min-h-[72vh] rounded-2xl bg-white">
+                {mergedPdfError ? (
+                  <div className="p-6 text-sm font-semibold text-rose-600">{mergedPdfError}</div>
+                ) : mergedPdfUrl ? (
+                  <iframe ref={mergedFrameRef} title="Merged PDF" src={mergedPdfUrl} className="h-[72vh] w-full" />
+                ) : (
+                  <div className="p-6 text-sm font-semibold text-slate-600">
+                    Klik <span className="font-bold">Print + Lampiran</span> untuk membuat PDF gabungan (page 3+).
+                  </div>
+                )}
+
+                {/* Off-screen report DOM used to generate PDF bytes for merging (must not be display:none) */}
+                <div
+                  style={{
+                    position: "fixed",
+                    left: "-10000px",
+                    top: 0,
+                    width: "820px",
+                    opacity: 0,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <div ref={printAreaRef} className="print-pages grid gap-6">
+                    {ready && snapshot && (
+                      <>
+                        <PrintPageOne snapshot={snapshot} formatDate={formatDate} />
+                        <PrintPageTwo snapshot={snapshot} formatDate={formatDate} />
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div ref={printAreaRef} className="print-pages grid gap-6">
+                {ready && snapshot && (
+                  <>
+                    <PrintPageOne snapshot={snapshot} formatDate={formatDate} />
+                    <PrintPageTwo snapshot={snapshot} formatDate={formatDate} />
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -230,10 +589,10 @@ export default function ServiceReportPrintModal({
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-[18px] border border-[#d4d9e7] bg-white">
-      <div className="border-b border-[#e4e7f2] bg-[#f8f9fc] px-5 py-2.5">
+      <div className="border-b border-[#e4e7f2] bg-[#f8f9fc] px-4 py-2">
         <p className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#6f748a]">{title}</p>
       </div>
-      <div className="px-5 py-3.5">{children}</div>
+      <div className="px-4 py-3">{children}</div>
     </section>
   );
 }
@@ -242,16 +601,16 @@ function DefinitionGrid({ rows, columns = 1 }: { rows: { label: string; value: s
   const chunkSize = Math.ceil(rows.length / columns);
   const groups = Array.from({ length: columns }, (_, idx) => rows.slice(idx * chunkSize, (idx + 1) * chunkSize)).filter((group) => group.length);
   return (
-    <div className={`grid gap-3 ${columns > 1 ? "md:grid-cols-2" : "grid-cols-1"}`}>
+    <div className={`grid gap-2 ${columns > 1 ? "md:grid-cols-2" : "grid-cols-1"}`}>
       {groups.map((group, idx) => (
-        <table key={`group-${idx}`} className="w-full border-collapse text-[13px] text-[#141b2d]">
+        <table key={`group-${idx}`} className="w-full border-collapse text-[12px] text-[#141b2d]">
           <tbody>
             {group.map((row) => (
               <tr key={row.label} className="align-top">
-                <th className="w-[120px] py-1 pr-2 text-left text-[10px] font-semibold uppercase tracking-[0.25em] text-[#7b819a]">
+                <th className="w-[120px] py-0.5 pr-2 text-left text-[10px] font-semibold uppercase tracking-[0.25em] text-[#7b819a]">
                   {row.label}
                 </th>
-                <td className="py-1 text-left font-semibold">
+                <td className="py-0.5 text-left font-semibold">
                   <span className="mr-2 text-[#7b819a]">:</span>
                   <span className="break-words text-[#141b2d]">{row.value || "-"}</span>
                 </td>
@@ -341,9 +700,8 @@ function PageContainer({
 
 function PrintPageOne({ snapshot, formatDate }: { snapshot: PrintableReport; formatDate: (value?: string) => string }) {
   const primaryDevice = snapshot.deviceRows?.[0];
-  const beforeEvidence = snapshot.beforeEvidence || [];
-  const afterEvidence = snapshot.afterEvidence || [];
-  const evidenceCount = beforeEvidence.length + afterEvidence.length;
+  const tools = snapshot.tools?.length ? snapshot.tools : [{ code: "", description: "", usableLimit: "" }];
+  
 
   const customerInfo = useMemo(
     () => [
@@ -400,53 +758,6 @@ function PrintPageOne({ snapshot, formatDate }: { snapshot: PrintableReport; for
       <SectionCard title="Activity">
         <DefinitionGrid rows={activityRows} columns={1} />
       </SectionCard>
-
-      <SectionCard title="Evidence">
-        {evidenceCount === 0 ? (
-          <div className="min-h-[90px] rounded-2xl border border-dashed border-[#cfd4e4] bg-white" />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">Before</p>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {beforeEvidence.slice(0, 6).map((src, idx) => (
-                  <div key={`before-${idx}`} className="overflow-hidden rounded-lg border border-[#e3e6f0] bg-white">
-                    <img src={src} alt={`Before ${idx + 1}`} className="h-14 w-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">After</p>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {afterEvidence.slice(0, 6).map((src, idx) => (
-                  <div key={`after-${idx}`} className="overflow-hidden rounded-lg border border-[#e3e6f0] bg-white">
-                    <img src={src} alt={`After ${idx + 1}`} className="h-14 w-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </SectionCard>
-    </PageContainer>
-  );
-}
-
-function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; formatDate: (value?: string) => string }) {
-  const materials = snapshot.spareparts?.length ? snapshot.spareparts : [{ qty: "", partNo: "", description: "", status: "" }];
-  const tools = snapshot.tools?.length ? snapshot.tools : [{ code: "", description: "", usableLimit: "" }];
-
-  return (
-    <PageContainer
-      meta={
-        <>
-          <p>Labor Date: {formatDate(snapshot.carriedDate)}</p>
-          <p>Customer: {snapshot.customerName || "-"}</p>
-        </>
-      }
-      isLast
-    >
       <SectionCard title="Labor">
         <div className="grid gap-4 md:grid-cols-3">
           <div>
@@ -467,7 +778,7 @@ function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; for
       </SectionCard>
 
       <SectionCard title="Tools">
-        <div className="overflow-hidden rounded-2xl border border-[#e3e6f0]">
+        <div className="overflow-hidden rounded-2xl bg-white">
           <table className="w-full table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[160px]" />
@@ -476,26 +787,46 @@ function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; for
             </colgroup>
             <thead className="bg-[#f4f6fb] text-left text-[11px] font-semibold uppercase tracking-[0.3em] text-[#7b8097]">
               <tr>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Code/SN</th>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Description</th>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Usable limits</th>
+                <th className="px-3 py-1.5">Code/SN</th>
+                <th className="px-3 py-1.5">Description</th>
+                <th className="px-3 py-1.5">Usable limits</th>
               </tr>
             </thead>
             <tbody>
               {tools.slice(0, 6).map((item, index) => (
-                <tr key={`tool-${index}`} className="border-t border-[#eef1f8]">
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.code || "-"}</td>
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.description || "-"}</td>
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.usableLimit || "-"}</td>
+                <tr key={`tool-${index}`}>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.code || "-"}</td>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.description || "-"}</td>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.usableLimit || "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </SectionCard>
+    </PageContainer>
+  );
+}
 
+function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; formatDate: (value?: string) => string }) {
+  const materials = snapshot.spareparts?.length ? snapshot.spareparts : [{ qty: "", partNo: "", description: "", status: "" }];
+  const beforeEvidence = snapshot.beforeEvidence || [];
+  const afterEvidence = snapshot.afterEvidence || [];
+  const evidenceCount = beforeEvidence.length + afterEvidence.length;
+  const surveyUrl = "https://docs.google.com/forms/d/e/1FAIpQLSdyNgH3_wVZnAnh-g5AF6g9QYWH-p6TYvAE_nz55DGlqqp8lw/viewform";
+
+  return (
+    <PageContainer
+      meta={
+        <>
+          <p>Labor Date: {formatDate(snapshot.carriedDate)}</p>
+          <p>Customer: {snapshot.customerName || "-"}</p>
+        </>
+      }
+      isLast
+    >
       <SectionCard title="Materials">
-        <div className="overflow-hidden rounded-2xl border border-[#e3e6f0]">
+        <div className="overflow-hidden rounded-2xl bg-white">
           <table className="w-full table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[70px]" />
@@ -505,34 +836,78 @@ function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; for
             </colgroup>
             <thead className="bg-[#f4f6fb] text-left text-[11px] font-semibold uppercase tracking-[0.3em] text-[#7b8097]">
               <tr>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Qty</th>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Part No</th>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Description</th>
-                <th className="border-b border-[#e3e6f0] px-4 py-2">Status</th>
+                <th className="px-3 py-1.5">Qty</th>
+                <th className="px-3 py-1.5">Part No</th>
+                <th className="px-3 py-1.5">Description</th>
+                <th className="px-3 py-1.5">Status</th>
               </tr>
             </thead>
             <tbody>
               {materials.map((item, index) => (
-                <tr key={`material-${index}`} className="border-t border-[#eef1f8]">
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.qty || "-"}</td>
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.partNo || "-"}</td>
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.description || "-"}</td>
-                  <td className="px-4 py-2 text-sm text-[#151b2f]">{item.status || "-"}</td>
+                <tr key={`material-${index}`}>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.qty || "-"}</td>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.partNo || "-"}</td>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.description || "-"}</td>
+                  <td className="px-3 py-1.5 text-sm text-[#151b2f]">{item.status || "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </SectionCard>
+        
+      <SectionCard title="Evidence">
+        {evidenceCount === 0 ? (
+          <div className="min-h-[90px] rounded-2xl border border-dashed border-[#cfd4e4] bg-white" />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">Before</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {beforeEvidence.slice(0, 6).map((src, idx) => (
+                  <div key={`before-${idx}`} className="overflow-hidden rounded-lg bg-white">
+                    <img src={resolveMediaUrl(src) || src} alt={`Before ${idx + 1}`} className="h-14 w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">After</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {afterEvidence.slice(0, 6).map((src, idx) => (
+                  <div key={`after-${idx}`} className="overflow-hidden rounded-lg bg-white">
+                    <img src={resolveMediaUrl(src) || src} alt={`After ${idx + 1}`} className="h-14 w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </SectionCard>
 
       <SectionCard title="Recommendation & Signature">
         <div className="space-y-5">
-          <div className="rounded-2xl border border-dashed border-[#cfd4e4] bg-white px-4 py-3 text-sm text-[#151b2f] min-h-[120px] whitespace-pre-wrap">
+          <div className="rounded-2xl border border-dashed border-[#cfd4e4] bg-white px-3 py-2 text-sm text-[#151b2f] min-h-[100px] whitespace-pre-wrap">
             {snapshot.recommendation || "Tidak ada catatan."}
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <SignatureBlock title="Engineer Signature" name={snapshot.carriedBy} signature={snapshot.carriedSignature} date={snapshot.carriedDate} formatDate={formatDate} />
             <SignatureBlock title="Customer Signature" name={snapshot.approvedBy} signature={snapshot.approvedSignature} date={snapshot.approvedDate} formatDate={formatDate} />
+          </div>
+        </div>
+      </SectionCard>
+      
+      <SectionCard title="Customer Satisfaction">
+        <div className="grid items-center gap-4 md:grid-cols-[1fr,140px]">
+          <div>
+            <p className="text-sm font-semibold text-[#151b2f]">Customer Satisfaction</p>
+            <p className="mt-1 text-xs text-[#7b8097]">Scan QR code untuk mengisi feedback layanan.</p>
+            <p className="mt-2 break-all text-[10px] text-[#7b8097]">{surveyUrl}</p>
+          </div>
+          <div className="flex justify-center">
+            <div className="rounded-2xl border border-[#e3e6f0] bg-white p-2">
+              <img src={qrSurvey} alt="Customer Satisfaction QR" className="h-24 w-24" />
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -554,9 +929,9 @@ function SignatureBlock({
   formatDate: (value?: string) => string;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-[#e1e4f0] bg-[#f8f9fe] p-3">
+    <div className="flex flex-col gap-1.5 rounded-2xl border border-[#e1e4f0] bg-[#f8f9fe] p-2.5">
       <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#9096ab]">{title}</p>
-      <div className="min-h-[90px] rounded-xl border border-dashed border-[#cfd4e4] bg-white p-3 flex items-center justify-center">
+      <div className="min-h-[80px] rounded-xl border border-dashed border-[#cfd4e4] bg-white p-2 flex items-center justify-center">
         {signature ? <img src={signature} alt={`${title} signature`} className="max-h-16 object-contain" /> : <span className="text-xs text-[#adb2c4]">No signature</span>}
       </div>
       <p className="text-sm font-semibold text-[#151b2f]">{name || "-"}</p>
