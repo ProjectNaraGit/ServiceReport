@@ -1,2 +1,5 @@
 # Environment & secrets
 .env
+
+# Uploads (generated files)
+backend/uploads/

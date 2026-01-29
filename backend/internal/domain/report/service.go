@@ -1,8 +1,11 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,11 +52,161 @@ func (s *Service) SaveTechnicianPayload(ctx context.Context, reportID, teknisiID
 	if err != nil {
 		return nil, err
 	}
-	report.TeknisiPayload = datatypes.JSON(payload)
+	processed, err := s.persistPayloadImages(reportID, report.Status, payload)
+	if err != nil {
+		return nil, err
+	}
+	report.TeknisiPayload = datatypes.JSON(processed)
 	if err := s.db.WithContext(ctx).Model(report).Update("teknisi_payload", report.TeknisiPayload).Error; err != nil {
 		return nil, err
 	}
 	return report, nil
+}
+
+func (s *Service) persistPayloadImages(reportID uint64, status string, payload []byte) ([]byte, error) {
+	if len(payload) == 0 {
+		return payload, nil
+	}
+
+	// Decode and store base64 data URLs in known fields.
+	var root map[string]any
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
+		return payload, nil
+	}
+
+	folder := "draft"
+	if status == "done" {
+		folder = "finalized"
+	}
+	if finalizedRaw, ok := root["finalizedDate"]; ok {
+		if finalizedStr, ok := finalizedRaw.(string); ok {
+			finalizedStr = strings.TrimSpace(finalizedStr)
+			if finalizedStr != "" {
+				folder = sanitizeFilename(finalizedStr)
+			}
+		}
+	}
+
+	storeField := func(key, label string) {
+		val, ok := root[key]
+		if !ok {
+			return
+		}
+		valStr, ok := val.(string)
+		if !ok {
+			return
+		}
+		url, err := s.storeImageDataURL(reportID, folder, label, valStr)
+		if err != nil {
+			return
+		}
+		if url != "" {
+			root[key] = url
+		}
+	}
+
+	storeSliceField := func(key, labelPrefix string) {
+		val, ok := root[key]
+		if !ok {
+			return
+		}
+		arr, ok := val.([]any)
+		if !ok {
+			return
+		}
+		changed := false
+		for i := range arr {
+			itemStr, ok := arr[i].(string)
+			if !ok {
+				continue
+			}
+			url, err := s.storeImageDataURL(reportID, folder, fmt.Sprintf("%s-%02d", labelPrefix, i+1), itemStr)
+			if err != nil {
+				continue
+			}
+			if url != "" {
+				arr[i] = url
+				changed = true
+			}
+		}
+		if changed {
+			root[key] = arr
+		}
+	}
+
+	storeField("beforeImage", "beforeImage")
+	storeField("afterImage", "afterImage")
+	storeSliceField("beforeEvidence", "beforeEvidence")
+	storeSliceField("afterEvidence", "afterEvidence")
+	storeSliceField("problemPhotos", "problemPhoto")
+
+	out, err := json.Marshal(root)
+	if err != nil {
+		return payload, nil
+	}
+	return out, nil
+}
+
+func (s *Service) storeImageDataURL(reportID uint64, folder string, label string, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	// Already a URL/path.
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "/uploads/") {
+		return "", nil
+	}
+	if !strings.HasPrefix(trimmed, "data:image/") {
+		return "", nil
+	}
+
+	comma := strings.Index(trimmed, ",")
+	if comma < 0 {
+		return "", nil
+	}
+	meta := trimmed[:comma]
+	data := trimmed[comma+1:]
+	if !strings.Contains(meta, ";base64") {
+		return "", nil
+	}
+
+	mime := strings.TrimPrefix(meta, "data:")
+	mime = strings.TrimSuffix(mime, ";base64")
+	ext := ".png"
+	switch mime {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/jpg":
+		ext = ".jpg"
+	case "image/png":
+		ext = ".png"
+	case "image/webp":
+		ext = ".webp"
+	}
+
+	buf, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return "", nil
+	}
+
+	safeLabel := sanitizeFilename(label)
+	safeFolder := sanitizeFilename(folder)
+	if safeFolder == "" {
+		safeFolder = "draft"
+	}
+	storedName := fmt.Sprintf("%s-%s%s", safeLabel, randomSuffix(), ext)
+	storedPath := filepath.Join(s.uploadDir, "images", fmt.Sprintf("%d", reportID), safeFolder, storedName)
+	if err := os.MkdirAll(filepath.Dir(storedPath), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(storedPath, buf, 0o644); err != nil {
+		return "", err
+	}
+
+	// Return URL path; server should expose /uploads -> uploadDir
+	return fmt.Sprintf("/uploads/images/%d/%s/%s", reportID, safeFolder, storedName), nil
 }
 
 func NewService(db *gorm.DB, uploadDir string) *Service {
@@ -85,6 +238,11 @@ func (s *Service) Create(ctx context.Context, adminID uint64, req CreateReportRe
 	}
 	if err := s.db.WithContext(ctx).Create(report).Error; err != nil {
 		return nil, err
+	}
+
+	if processed, err := s.persistPayloadImages(report.ID, report.Status, req.FormPayload); err == nil {
+		report.FormPayload = datatypes.JSON(processed)
+		_ = s.db.WithContext(ctx).Model(report).Update("form_payload", report.FormPayload).Error
 	}
 	return report, nil
 }
