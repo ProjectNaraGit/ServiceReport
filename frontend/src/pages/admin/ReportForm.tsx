@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { api } from "../../lib/api";
-import { Calendar, Mail, Plus, Printer, Send, UploadCloud } from "lucide-react";
+import { Calendar, CheckCircle, Mail, Plus, Printer, Send, UploadCloud, XCircle } from "lucide-react";
 import qrSurvey from "../../assets/qrSurvey.svg";
 import { useAuth } from "../../hooks/useAuth";
+import { resolveMediaUrl } from "../../lib/media";
 
 type DeviceRow = {
   partNo: string;
@@ -152,8 +153,14 @@ export default function ReportForm() {
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [pendingValues, setPendingValues] = useState<ReportFormValues | null>(null);
   const [showSurveyQrModal, setShowSurveyQrModal] = useState(false);
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [imagePreviewSrc, setImagePreviewSrc] = useState<string | null>(null);
+  const [imagePreviewTitle, setImagePreviewTitle] = useState<string>("");
+  const [sendFeedback, setSendFeedback] = useState<{ status: "success" | "error"; message: string } | null>(null);
   const { user } = useAuth();
-  const lockNonRequiredSections = user?.role === "ADMIN";
+  const role = user?.role;
+  const canEditOptionalSections = role === "MASTER_ADMIN" || role === "ADMIN";
+  const lockNonRequiredSections = !canEditOptionalSections;
 
   const {
     register,
@@ -275,6 +282,18 @@ export default function ReportForm() {
     setProblemPhotos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
+  const openProblemPreview = (src: string, index: number) => {
+    setImagePreviewSrc(src);
+    setImagePreviewTitle(`Problem Photo ${index + 1}`);
+    setImagePreviewOpen(true);
+  };
+
+  const closeProblemPreview = () => {
+    setImagePreviewOpen(false);
+    setImagePreviewSrc(null);
+    setImagePreviewTitle("");
+  };
+
   const handleBeforeAfterImage = (key: "beforeImage" | "afterImage") => (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -363,19 +382,39 @@ export default function ReportForm() {
         });
       }
       setMessage("Service report sent to FSE.");
+      setSendFeedback({ status: "success", message: "Service report berhasil dikirim ke teknisi." });
       reset(defaultValues);
       setProblemPhotos([]);
       setPendingValues(null);
       setShowSendConfirm(false);
     } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? "Failed to save report.");
+      const errorMsg = err?.response?.data?.error ?? "Failed to save report.";
+      setMessage(errorMsg);
+      setSendFeedback({ status: "error", message: errorMsg });
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (!sendFeedback) return;
+    const timeout = setTimeout(() => setSendFeedback(null), 2200);
+    return () => clearTimeout(timeout);
+  }, [sendFeedback]);
+
   return (
     <div className="space-y-8 pb-16 text-slate-900">
+      {imagePreviewOpen && imagePreviewSrc && (
+        <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-slate-900/80 p-4" onClick={closeProblemPreview}>
+          <div className="relative max-h-[90vh] max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-slate-700 shadow" onClick={closeProblemPreview}>
+              Close
+            </button>
+            <img src={resolveMediaUrl(imagePreviewSrc)} alt={imagePreviewTitle} className="h-full w-full object-contain bg-black" />
+            <p className="px-6 py-4 text-center text-sm font-semibold text-slate-600">{imagePreviewTitle}</p>
+          </div>
+        </div>
+      )}
       <header>
         <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Service Report</p>
         <h1 className="text-3xl font-semibold text-slate-900">Service Report Form</h1>
@@ -517,18 +556,23 @@ export default function ReportForm() {
               <h3 className="text-lg font-semibold">Report Problem</h3>
               <span className="text-sm text-red-500">*</span>
             </div>
-            <div className="mt-3 grid gap-4 md:grid-cols-4">
+            <div className="mt-3 grid gap-4 md:grid-cols-2">
               {problemPhotos.map((photo, index) => (
-                <div key={index} className="relative h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <img src={photo} alt={`Problem ${index + 1}`} className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow hover:bg-red-500 hover:text-white"
-                    aria-label={`Remove photo ${index + 1}`}
-                    onClick={() => handleRemovePhoto(index)}
-                  >
-                    ×
-                  </button>
+                <div key={index} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <img src={resolveMediaUrl(photo)} alt={`Problem ${index + 1}`} className="h-48 w-full object-cover" />
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-slate-900/55 px-4 py-2 text-xs text-white">
+                    <button type="button" className="flex-1 text-left font-semibold tracking-wide" onClick={() => openProblemPreview(photo, index)}>
+                      Preview
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow"
+                      aria-label={`Remove photo ${index + 1}`}
+                      onClick={() => handleRemovePhoto(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
               {problemPhotos.length < MAX_PROBLEM_PHOTOS &&
@@ -1158,6 +1202,50 @@ export default function ReportForm() {
         </section>
 
         {message && <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</p>}
+
+        {sendFeedback && (
+          <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4">
+            <div
+              className={`relative flex w-full max-w-sm flex-col items-center gap-4 overflow-hidden rounded-3xl border border-white/40 px-8 py-10 text-center shadow-2xl shadow-slate-900/30 feedback-card ${
+                sendFeedback.status === "success"
+                  ? "bg-gradient-to-br from-white via-emerald-50/70 to-white text-emerald-600"
+                  : "bg-gradient-to-br from-white via-rose-50/70 to-white text-rose-600"
+              }`}
+            >
+              <span
+                className={`feedback-ring h-56 w-56 border ${
+                  sendFeedback.status === "success" ? "border-emerald-200" : "border-rose-200"
+                }`}
+              />
+              <span
+                className={`feedback-ring-delay h-56 w-56 border ${
+                  sendFeedback.status === "success" ? "border-emerald-100" : "border-rose-100"
+                }`}
+              />
+              <div
+                className={`relative flex h-20 w-20 items-center justify-center rounded-full border text-white ${
+                  sendFeedback.status === "success"
+                    ? "border-emerald-200 bg-emerald-500"
+                    : "border-rose-200 bg-rose-500"
+                }`}
+              >
+                {sendFeedback.status === "success" ? (
+                  <CheckCircle className="h-10 w-10" />
+                ) : (
+                  <XCircle className="h-10 w-10" />
+                )}
+              </div>
+              <div className="relative">
+                <p className="text-xl font-semibold tracking-tight">
+                  {sendFeedback.status === "success" ? "Terkirim" : "Gagal Dikirim"}
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {sendFeedback.message}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showSendConfirm && (
           <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">

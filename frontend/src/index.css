@@ -79,9 +79,71 @@ select {
   }
 }
 
+@keyframes feedback-card {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.95);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes feedback-ring {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.75);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
 @layer components {
   .input {
     @apply rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200;
+  }
+
+  .animate-pop {
+    animation: pop-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .feedback-card {
+    animation: feedback-card 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    backdrop-filter: blur(16px);
+  }
+
+  .feedback-ring,
+  .feedback-ring-delay {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 9999px;
+    animation: feedback-ring 1.8s ease-out infinite;
+  }
+
+  .feedback-ring-delay {
+    animation-delay: 0.35s;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

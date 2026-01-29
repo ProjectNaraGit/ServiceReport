@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
-import { Calendar, Mail, Plus, Printer, QrCode, X } from "lucide-react";
+import { resolveMediaUrl } from "../../lib/media";
+import { Calendar, CheckCircle, Mail, Plus, Printer, QrCode, X, XCircle } from "lucide-react";
 import qrSurvey from "../../assets/qrSurvey.svg";
 import kmsLogo from "../../assets/kmsLogo.jpeg";
 import ServiceReportPrintModal, { type PrintableReport } from "../../components/print/ServiceReportPrintModal";
@@ -183,6 +184,7 @@ export default function ReportForm() {
   const [attachments, setAttachments] = useState<NonNullable<ReportDetail["attachments"]>>([]);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [finalizeFeedback, setFinalizeFeedback] = useState<{ status: "success" | "error"; message: string } | null>(null);
 
   const {
     register,
@@ -211,6 +213,12 @@ export default function ReportForm() {
     control,
     name: "tools",
   });
+
+  useEffect(() => {
+    if (!finalizeFeedback) return;
+    const timeout = setTimeout(() => setFinalizeFeedback(null), 2200);
+    return () => clearTimeout(timeout);
+  }, [finalizeFeedback]);
 
   const selectedJobs = watch("jobInfo");
   const carriedSignature = watch("carriedSignature");
@@ -390,8 +398,8 @@ export default function ReportForm() {
     setShowSurveyQrModal(true);
   };
 
-  const openImagePreview = (src: string, title: string) => {
-    setImagePreviewSrc(src);
+  const openPreview = (src: string, title: string) => {
+    setImagePreviewSrc(resolveMediaUrl(src) || src);
     setImagePreviewTitle(title);
     setImagePreviewOpen(true);
   };
@@ -706,8 +714,11 @@ export default function ReportForm() {
         await api.patch(`/teknisi/reports/${id}/progress`, { status: "done", job_summary: "done", action_taken: "done" });
         setValue("finalizedDate", dateOnly, { shouldDirty: true });
         setMessage("Finalized and saved successfully.");
+        setFinalizeFeedback({ status: "success", message: "Laporan berhasil difinalkan." });
       } catch (err: any) {
-        setMessage(err?.response?.data?.error ?? "Failed to finalize.");
+        const errorMsg = err?.response?.data?.error ?? "Failed to finalize.";
+        setMessage(errorMsg);
+        setFinalizeFeedback({ status: "error", message: errorMsg });
       } finally {
         setPendingFinalize(false);
         setShowFinalizeConfirm(false);
@@ -828,7 +839,7 @@ export default function ReportForm() {
           </header>
 
           <form onSubmit={onSubmit} className="space-y-8">
-            <fieldset disabled={isFinalized} className="space-y-8">
+            <fieldset className="space-y-8" aria-disabled={isFinalized}>
             <section className={sectionClass}>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Field label="Dispatch No">
@@ -945,16 +956,34 @@ export default function ReportForm() {
           <div className="mt-6">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold">Report Problem</h3>
+              <span className="text-sm text-slate-500">{problemPhotos.length}/6</span>
             </div>
-            <div className="mt-3 grid gap-4 md:grid-cols-4">
+            <div className="mt-3 flex flex-wrap gap-4">
               {problemPhotos.length > 0 ? (
                 problemPhotos.map((photo, index) => (
-                  <div key={index} className="relative h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    <img src={photo} alt={`Problem ${index + 1}`} className="h-full w-full object-cover" />
+                  <div key={index} className="relative w-full max-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <img src={resolveMediaUrl(photo)} alt={`Problem ${index + 1}`} className="h-28 w-full object-cover" />
+                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-slate-900/55 px-4 py-2 text-xs text-white">
+                      <button type="button" className="flex-1 text-left font-semibold tracking-wide" onClick={() => openPreview(photo, `Problem Photo ${index + 1}`)}>
+                        Preview
+                      </button>
+                      {!isFinalized && (
+                        <button
+                          type="button"
+                          className="rounded-full bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow"
+                          aria-label={`Remove photo ${index + 1}`}
+                          onClick={() => {
+                            setProblemPhotos((prev) => prev.filter((_, idx) => idx !== index));
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (
-                <p className="col-span-4 text-sm text-slate-500">No problem photos attached.</p>
+                <p className="col-span-2 text-sm text-slate-500">No problem photos attached.</p>
               )}
             </div>
           </div>
@@ -1187,13 +1216,16 @@ export default function ReportForm() {
                 <tbody>
                   {toolFields.map((field, index) => (
                     <tr key={field.id}>
-                      <td className="border border-slate-700/40 px-3 py-2">
+                      <td className="border border-slate-200 px-3 py-2">
                         <input {...register(`tools.${index}.code` as const)} className={inputClass} />
                       </td>
-                      <td className="border border-slate-700/40 px-3 py-2">
-                        <input {...register(`tools.${index}.description` as const)} className={withError(`tools.${index}.description`, inputClass)} />
+                      <td className="border border-slate-200 px-3 py-2">
+                        <input
+                          {...register(`tools.${index}.description` as const, { required: "Tool description wajib diisi" })}
+                          className={withError(`tools.${index}.description`, inputClass)}
+                        />
                       </td>
-                      <td className="border border-slate-700/40 px-3 py-2">
+                      <td className="border border-slate-200 px-3 py-2">
                         <input {...register(`tools.${index}.usableLimit` as const)} className={inputClass} />
                       </td>
                     </tr>
@@ -1261,7 +1293,6 @@ export default function ReportForm() {
                 ))}
               </tbody>
             </table>
-            
           </div>
           {errors.spareparts?.[0]?.description && (
             <p className="mt-2 text-xs font-semibold text-red-500">Spare part description wajib diisi</p>
@@ -1283,27 +1314,29 @@ export default function ReportForm() {
                 <p className="text-xs font-semibold text-slate-400">{(beforeEvidenceValue || []).length}/6</p>
               </div>
 
-              <div className="mt-3 space-y-3">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {(beforeEvidenceValue || []).length > 0 ? (
                   (beforeEvidenceValue || []).map((src, index) => (
-                    <div key={`${src}-${index}`} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => openImagePreview(src, "Before Evidence")}
-                        className="block w-full"
-                        disabled={!src}
-                      >
-                        <img src={src} alt={`Before ${index + 1}`} className="h-32 w-full rounded-xl object-cover" />
-                      </button>
-                      {!isFinalized && (
+                    <div key={`${src}-${index}`} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <img src={resolveMediaUrl(src)} alt={`Before evidence ${index + 1}`} className="h-40 w-full object-cover" />
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/45 px-3 py-2 text-xs text-white">
                         <button
                           type="button"
-                          onClick={() => removeEvidenceAt("beforeEvidence", index)}
-                          className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow"
+                          onClick={() => openPreview(src, `Before Evidence ${index + 1}`)}
+                          className="flex-1 text-left font-semibold tracking-wide"
                         >
-                          Remove
+                          Preview
                         </button>
-                      )}
+                        {!isFinalized && (
+                          <button
+                            type="button"
+                            onClick={() => removeEvidenceAt("beforeEvidence", index)}
+                            className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -1312,10 +1345,6 @@ export default function ReportForm() {
                   </div>
                 )}
               </div>
-
-              {(beforeEvidenceValue || []).length > 0 && (
-                <p className="mt-2 text-xs text-slate-500">Click for detail image</p>
-              )}
 
               <label
                 className={`mt-3 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
@@ -1340,27 +1369,29 @@ export default function ReportForm() {
                 <p className="text-xs font-semibold text-slate-400">{(afterEvidenceValue || []).length}/6</p>
               </div>
 
-              <div className="mt-3 space-y-3">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {(afterEvidenceValue || []).length > 0 ? (
                   (afterEvidenceValue || []).map((src, index) => (
-                    <div key={`${src}-${index}`} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => openImagePreview(src, "After Evidence")}
-                        className="block w-full"
-                        disabled={!src}
-                      >
-                        <img src={src} alt={`After ${index + 1}`} className="h-32 w-full rounded-xl object-cover" />
-                      </button>
-                      {!isFinalized && (
+                    <div key={`${src}-${index}`} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <img src={resolveMediaUrl(src)} alt={`After evidence ${index + 1}`} className="h-40 w-full object-cover" />
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/45 px-3 py-2 text-xs text-white">
                         <button
                           type="button"
-                          onClick={() => removeEvidenceAt("afterEvidence", index)}
-                          className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow"
+                          onClick={() => openPreview(src, `After Evidence ${index + 1}`)}
+                          className="flex-1 text-left font-semibold tracking-wide"
                         >
-                          Remove
+                          Preview
                         </button>
-                      )}
+                        {!isFinalized && (
+                          <button
+                            type="button"
+                            onClick={() => removeEvidenceAt("afterEvidence", index)}
+                            className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -1369,10 +1400,6 @@ export default function ReportForm() {
                   </div>
                 )}
               </div>
-
-              {(afterEvidenceValue || []).length > 0 && (
-                <p className="mt-2 text-xs text-slate-500">Click for detail image</p>
-              )}
 
               <label
                 className={`mt-3 inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
@@ -1603,6 +1630,48 @@ export default function ReportForm() {
             </section>
             {message && <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</p>}
           </form>
+
+          {finalizeFeedback && (
+            <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4">
+              <div
+                className={`relative flex w-full max-w-sm flex-col items-center gap-4 overflow-hidden rounded-3xl border border-white/40 px-8 py-10 text-center shadow-2xl shadow-slate-900/30 feedback-card ${
+                  finalizeFeedback.status === "success"
+                    ? "bg-gradient-to-br from-white via-emerald-50/70 to-white text-emerald-600"
+                    : "bg-gradient-to-br from-white via-rose-50/70 to-white text-rose-600"
+                }`}
+              >
+                <span
+                  className={`feedback-ring h-56 w-56 border ${
+                    finalizeFeedback.status === "success" ? "border-emerald-200" : "border-rose-200"
+                  }`}
+                />
+                <span
+                  className={`feedback-ring-delay h-56 w-56 border ${
+                    finalizeFeedback.status === "success" ? "border-emerald-100" : "border-rose-100"
+                  }`}
+                />
+                <div
+                  className={`relative flex h-20 w-20 items-center justify-center rounded-full border text-white ${
+                    finalizeFeedback.status === "success"
+                      ? "border-emerald-200 bg-emerald-500"
+                      : "border-rose-200 bg-rose-500"
+                  }`}
+                >
+                  {finalizeFeedback.status === "success" ? (
+                    <CheckCircle className="h-10 w-10" />
+                  ) : (
+                    <XCircle className="h-10 w-10" />
+                  )}
+                </div>
+                <div className="relative">
+                  <p className="text-xl font-semibold tracking-tight">
+                    {finalizeFeedback.status === "success" ? "Finalized" : "Gagal Finalized"}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">{finalizeFeedback.message}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showFinalizeConfirm && (
             <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">
