@@ -1,2 +1,6 @@
 # Environment & secrets
 .env
+
+# Upload artifacts
+backend/uploads/attachments/*
+!backend/uploads/attachments/.gitkeep
