@@ -27,6 +27,7 @@ type ServiceReport struct {
 	FormPayload     datatypes.JSON `gorm:"type:json" json:"form_payload"`
 	TeknisiPayload  datatypes.JSON `gorm:"type:json" json:"teknisi_payload"`
 	Photos          []ReportPhoto  `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE" json:"photos"`
+	Attachments     []ReportAttachment `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE" json:"attachments"`
 	StatusLogs      []StatusLog    `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE" json:"status_logs"`
 }
 
@@ -37,6 +38,17 @@ type ReportPhoto struct {
 	Type      string    `gorm:"type:enum('before','after','other');default:'other'" json:"type"`
 	FilePath  string    `gorm:"size:255" json:"file_path"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+// ReportAttachment stores uploaded file attachments (pdf/doc/etc).
+type ReportAttachment struct {
+	ID           uint64    `gorm:"primaryKey" json:"id"`
+	ReportID     uint64    `gorm:"index" json:"report_id"`
+	FilePath     string    `gorm:"size:255" json:"file_path"`
+	FileName     string    `gorm:"size:255" json:"file_name"`
+	ContentType  string    `gorm:"size:120" json:"content_type"`
+	Size         int64     `json:"size"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // StatusLog tracks transitions.

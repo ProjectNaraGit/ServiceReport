@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
-import { Calendar, Mail, Plus, Printer, QrCode } from "lucide-react";
+import { Calendar, Mail, Plus, Printer, QrCode, X } from "lucide-react";
 import qrSurvey from "../../assets/qrSurvey.svg";
 import kmsLogo from "../../assets/kmsLogo.jpeg";
 import ServiceReportPrintModal, { type PrintableReport } from "../../components/print/ServiceReportPrintModal";
+import { useAuth } from "../../hooks/useAuth";
 
 type DeviceRow = {
   partNo: string;
@@ -25,6 +26,16 @@ type ReportDetail = {
   status: "open" | "progress" | "done";
   form_payload?: ReportFormValues & { problemPhotos?: string[]; status?: string };
   teknisi_payload?: ReportFormValues & { problemPhotos?: string[]; status?: string };
+  attachments?: {
+    id?: number;
+    ID?: number;
+    file_name?: string;
+    FileName?: string;
+    size?: number;
+    Size?: number;
+    created_at?: string;
+    CreatedAt?: string;
+  }[];
 };
 
 type SparepartRow = {
@@ -150,6 +161,7 @@ const printRowClass = "grid grid-cols-[150px,1fr] gap-3 text-[12px]";
 const surveyLink = "https://docs.google.com/forms/d/e/1FAIpQLSdyNgH3_wVZnAnh-g5AF6g9QYWH-p6TYvAE_nz55DGlqqp8lw/viewform";
 
 export default function ReportForm() {
+  const { user } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   
@@ -168,6 +180,9 @@ export default function ReportForm() {
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [printModalAuto, setPrintModalAuto] = useState(false);
   const [printSnapshot, setPrintSnapshot] = useState<PrintableReport | null>(null);
+  const [attachments, setAttachments] = useState<NonNullable<ReportDetail["attachments"]>>([]);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const {
     register,
@@ -462,6 +477,7 @@ export default function ReportForm() {
       .then((res) => {
         if (!active) return;
         const detail: ReportDetail = res.data?.data;
+        setAttachments(detail.attachments ?? []);
         const payload = detail.teknisi_payload || detail.form_payload;
         if (payload) {
           const normalizedBeforeEvidence = normalizeEvidence((payload as any).beforeEvidence ?? (payload as any).beforeImage);
@@ -492,6 +508,60 @@ export default function ReportForm() {
       active = false;
     };
   }, [id, reset]);
+
+  const formatBytes = (value?: number) => {
+    const bytes = Number(value || 0);
+    if (!bytes) return "-";
+    const units = ["B", "KB", "MB", "GB"];
+    let idx = 0;
+    let n = bytes;
+    while (n >= 1024 && idx < units.length - 1) {
+      n /= 1024;
+      idx += 1;
+    }
+    return `${n.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+  };
+
+  const downloadAttachment = (attachmentId: number) => {
+    if (!id) return;
+    const base = (api.defaults.baseURL || "").replace(/\/$/, "");
+    const url = `${base}/teknisi/reports/${id}/attachments/${attachmentId}/download`;
+    window.open(url, "_blank", "noopener");
+  };
+
+  const deleteAttachment = async (attachmentId: number) => {
+    if (!id || isFinalized) return;
+    setAttachmentError(null);
+    try {
+      await api.delete(`/teknisi/reports/${id}/attachments/${attachmentId}`);
+      setAttachments((prev) => prev.filter((att) => (att.id ?? att.ID) !== attachmentId));
+    } catch (err: any) {
+      setAttachmentError(err?.response?.data?.error ?? "Gagal menghapus lampiran.");
+    }
+  };
+
+  const handleAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!id || files.length === 0) return;
+    setAttachmentError(null);
+    setAttachmentUploading(true);
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await api.post(`/teknisi/reports/${id}/attachments`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        const created = res.data?.data;
+        setAttachments((prev) => [created, ...prev]);
+      }
+    } catch (err: any) {
+      setAttachmentError(err?.response?.data?.error ?? "Gagal upload lampiran.");
+    } finally {
+      setAttachmentUploading(false);
+    }
+  };
 
   const onSubmit = handleSubmit(
     async (values) => {
@@ -1322,7 +1392,7 @@ export default function ReportForm() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1.3fr,1fr]">
+          <div className="mt-6 grid gap-6 items-start lg:grid-cols-[1.3fr,1fr]">
             <div className="space-y-4">
               <fieldset disabled={isFinalized} className="space-y-4">
                 <div className="rounded-2xl border border-slate-700/40 bg-white/80 p-4">
@@ -1368,33 +1438,9 @@ export default function ReportForm() {
                   </table>
                 </div>
               </fieldset>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" className="rounded-xl bg-slate-700 px-5 py-2 text-sm font-semibold text-white" onClick={handleFinalizeCheck}>
-                  Finalized
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrint}
-                  disabled={!isFinalized}
-                  className={`rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
-                    isFinalized ? "hover:border-slate-400" : "cursor-not-allowed opacity-60"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Printer className="h-4 w-4" />
-                    Print
-                  </div>
-                </button>
-                <button type="button" className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    Email
-                  </div>
-                </button>
-              </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white/90 p-6">
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-6 self-start">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-3 text-center md:text-left md:flex-1">
                   <div>
@@ -1455,6 +1501,102 @@ export default function ReportForm() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Lampiran</p>
+                  <p className="text-xs text-slate-500">PDF / DOC / XLS / dll</p>
+                </div>
+
+                {user?.role === "TEKNISI" && !isFinalized && (
+                  <label className={`inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                    attachmentUploading ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+                  }`}>
+                    {attachmentUploading ? "Uploading..." : "Upload lampiran"}
+                    <input type="file" className="hidden" onChange={handleAttachmentUpload} disabled={attachmentUploading} multiple />
+                  </label>
+                )}
+              </div>
+
+              {isFinalized && user?.role === "TEKNISI" && (
+                <p className="mt-2 text-xs font-semibold text-slate-500">Lampiran terkunci karena report sudah finalized.</p>
+              )}
+
+              {attachmentError && <p className="mt-2 text-xs font-semibold text-red-500">{attachmentError}</p>}
+
+              <div className="mt-4 space-y-2">
+                {attachments.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">
+                    Belum ada lampiran.
+                  </div>
+                ) : (
+                  attachments.map((att, idx) => {
+                    const attId = (att.id ?? att.ID ?? idx) as number;
+                    const fileName = att.file_name ?? att.FileName ?? "Lampiran";
+                    const size = att.size ?? att.Size;
+                    const createdAt = att.created_at ?? att.CreatedAt;
+                    return (
+                      <div key={`att-${attId}-${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{fileName}</p>
+                          <p className="text-xs text-slate-500">
+                            {formatBytes(size)}
+                            {createdAt ? ` • ${formatLongDate(createdAt)}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {user?.role === "TEKNISI" && !isFinalized && (
+                            <button
+                              type="button"
+                              onClick={() => deleteAttachment(attId)}
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-300 p-2 text-slate-700 hover:border-slate-400"
+                              title="Hapus"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => downloadAttachment(attId)}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
+                          >
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button type="button" className="rounded-xl bg-slate-700 px-5 py-2 text-sm font-semibold text-white" onClick={handleFinalizeCheck}>
+                Finalized
+              </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                disabled={!isFinalized}
+                className={`rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 ${
+                  isFinalized ? "hover:border-slate-400" : "cursor-not-allowed opacity-60"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Printer className="h-4 w-4" />
+                  Print
+                </div>
+              </button>
+              <button type="button" className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  Email
+                </div>
+              </button>
             </div>
           </div>
 

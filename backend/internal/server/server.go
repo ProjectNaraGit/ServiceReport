@@ -51,7 +51,7 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	userSvc := user.NewService(db, hasher, mailSvc)
 	userHandler := user.NewHandler(userSvc)
 
-	reportSvc := report.NewService(db)
+	reportSvc := report.NewService(db, cfg.UploadDir)
 	reportHandler := report.NewHandler(reportSvc)
 
 	partnerSvc := partner.NewService(db)
@@ -100,6 +100,9 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	teknisi.Use(middleware.RoleGuard(user.RoleTeknisi, user.RoleAdmin, user.RoleMasterAdmin))
 	teknisi.GET("/reports", reportHandler.ListAssigned)
 	teknisi.GET("/reports/:id", reportHandler.TechnicianDetail)
+	teknisi.POST("/reports/:id/attachments", reportHandler.UploadAttachment)
+	teknisi.GET("/reports/:id/attachments/:attachment_id/download", reportHandler.DownloadAttachment)
+	teknisi.DELETE("/reports/:id/attachments/:attachment_id", reportHandler.DeleteAttachment)
 	teknisi.PATCH("/reports/:id/form", reportHandler.SaveTechnicianForm)
 	teknisi.PATCH("/reports/:id/progress", reportHandler.UpdateProgress)
 

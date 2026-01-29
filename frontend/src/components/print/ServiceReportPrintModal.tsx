@@ -375,8 +375,6 @@ function PrintPageOne({ snapshot, formatDate }: { snapshot: PrintableReport; for
       { label: "Report Problem", value: snapshot.problemDescription || "-" },
       { label: "Identified Problem", value: snapshot.serviceDescription || "-" },
       { label: "Solution", value: snapshot.conclusion || "-" },
-      { label: "Test Result", value: snapshot.recommendation || "-" },
-      { label: "Test Passed", value: snapshot.finalizedDate ? "Yes" : "No" },
       { label: "Close Date", value: formatDate(snapshot.finalizedDate) },
       { label: "Field Engineer", value: snapshot.carriedBy || "-" },
     ],

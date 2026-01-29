@@ -28,6 +28,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&user.User{},
 		&report.ServiceReport{},
 		&report.ReportPhoto{},
+		&report.ReportAttachment{},
 		&report.StatusLog{},
 		&partner.PartnerLocation{},
 	); err != nil {
