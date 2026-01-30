@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	ErrReportNotFound = errors.New("report not found")
+	ErrReportNotFound  = errors.New("report not found")
 	ErrReportForbidden = errors.New("report forbidden")
 )
 

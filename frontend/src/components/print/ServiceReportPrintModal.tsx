@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import logoKms from "../../assets/logo kms.png";
-import qrSurvey from "../../assets/qrSurvey.svg";
+import qrSurvey from "../../assets/qrSurvey.png";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { PDFDocument } from "pdf-lib";
@@ -78,6 +78,7 @@ export default function ServiceReportPrintModal({
   const printAreaRef = useRef<HTMLDivElement | null>(null);
   const preparedPortalRef = useRef<HTMLElement | null>(null);
   const mergedFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const originalTitleRef = useRef<string>(typeof document !== "undefined" ? document.title : "Service Report");
 
   const ready = !!snapshot && !loading && !errorMessage;
 
@@ -115,7 +116,8 @@ export default function ServiceReportPrintModal({
         pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
         if (i < pages.length - 1) pdf.addPage();
       }
-      const filename = `${snapshot?.dispatchNo || "service-report"}.pdf`;
+      const baseName = snapshot?.dispatchNo ? `Service Report ${snapshot.dispatchNo}` : "Service Report";
+      const filename = `${baseName}.pdf`;
       pdf.save(filename);
     } catch (err) {
       console.error("Failed to generate PDF", err);
@@ -189,7 +191,10 @@ export default function ServiceReportPrintModal({
       attPages.forEach((p: any) => merged.addPage(p));
 
       const mergedBytes = await merged.save();
-      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const mergedArray = mergedBytes instanceof Uint8Array ? mergedBytes : new Uint8Array(mergedBytes);
+      const mergedBuffer = new ArrayBuffer(mergedArray.byteLength);
+      new Uint8Array(mergedBuffer).set(mergedArray);
+      const blob = new Blob([mergedBuffer], { type: "application/pdf" });
       const blobUrl = URL.createObjectURL(blob);
 
       void attachmentName;
@@ -476,6 +481,18 @@ export default function ServiceReportPrintModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, ready, snapshot]);
 
+  useEffect(() => {
+    if (!open) {
+      document.title = originalTitleRef.current;
+      return;
+    }
+    const dispatchTitle = snapshot?.dispatchNo ? `Service Report ${snapshot.dispatchNo}` : "Service Report";
+    document.title = dispatchTitle;
+    return () => {
+      document.title = originalTitleRef.current;
+    };
+  }, [open, snapshot?.dispatchNo]);
+
   if (!open) return null;
 
   return (
@@ -487,7 +504,14 @@ export default function ServiceReportPrintModal({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Print Preview</p>
-            <h3 className="text-2xl font-semibold text-slate-900">Service Report PDF</h3>
+            <h3 className="text-2xl font-semibold text-slate-900">
+              Service Report
+              {snapshot?.dispatchNo ? (
+                <span className="ml-2 text-base font-medium text-slate-600">#{snapshot.dispatchNo}</span>
+              ) : (
+                <span className="ml-2 text-base font-medium text-slate-400">(dispatch belum tersedia)</span>
+              )}
+            </h3>
             <p className="text-sm text-slate-500">Layout dua halaman sesuai template.</p>
             {snapshot?.attachmentPdfUrl && (
               <p className="mt-2 text-xs font-semibold text-slate-600">

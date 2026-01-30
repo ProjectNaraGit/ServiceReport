@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import { resolveMediaUrl } from "../../lib/media";
 import { Calendar, CheckCircle, Mail, Plus, Printer, QrCode, X, XCircle } from "lucide-react";
-import qrSurvey from "../../assets/qrSurvey.svg";
+import qrSurvey from "../../assets/qrSurvey.png";
 import kmsLogo from "../../assets/kmsLogo.jpeg";
 import ServiceReportPrintModal, { type PrintableReport } from "../../components/print/ServiceReportPrintModal";
 import { useAuth } from "../../hooks/useAuth";
+import { DEFAULT_DISPATCH_PLACEHOLDER, useDocumentTitle } from "../../hooks/useDocumentTitle";
 
 type DeviceRow = {
   partNo: string;
@@ -398,6 +399,13 @@ export default function ReportForm() {
   const handleShowQr = () => {
     setShowSurveyQrModal(true);
   };
+
+  const currentDispatchTitle = useMemo(() => {
+    const suffix = dispatchNoValue?.trim() || DEFAULT_DISPATCH_PLACEHOLDER;
+    return `Service Report ${suffix}(Dispatch no)`;
+  }, [dispatchNoValue]);
+
+  useDocumentTitle(currentDispatchTitle);
 
   const openPreview = (src: string, title: string) => {
     setImagePreviewSrc(resolveMediaUrl(src) || src);
@@ -1845,7 +1853,10 @@ export default function ReportForm() {
               </div>
             </div>
             <div className="text-right text-[11px] text-slate-500">
-              <p className="font-semibold text-slate-900">Service Report</p>
+              <p className="font-semibold text-slate-900">
+                Service Report
+                <span className="ml-1 font-normal text-slate-600">{dispatchNoValue ? `#${dispatchNoValue}` : ""}</span>
+              </p>
               <p>{formatLongDate(finalizedDateValue || dispatchDateValue || notifOpenValue)}</p>
             </div>
           </div>

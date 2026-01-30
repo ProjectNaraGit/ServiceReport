@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { api } from "../../lib/api";
 import { Calendar, CheckCircle, Mail, Plus, Printer, Send, UploadCloud, XCircle } from "lucide-react";
-import qrSurvey from "../../assets/qrSurvey.svg";
+import qrSurvey from "../../assets/qrSurvey.png";
 import { useAuth } from "../../hooks/useAuth";
 import { resolveMediaUrl } from "../../lib/media";
+import { DEFAULT_DISPATCH_PLACEHOLDER, useDocumentTitle } from "../../hooks/useDocumentTitle";
 
 type DeviceRow = {
   partNo: string;
@@ -189,6 +190,7 @@ export default function ReportForm() {
     name: "tools",
   });
 
+  const dispatchNoValue = watch("dispatchNo");
   const selectedJobs = watch("jobInfo");
   const carriedSignature = watch("carriedSignature");
   const approvedSignature = watch("approvedSignature");
@@ -199,6 +201,13 @@ export default function ReportForm() {
   const emailValue = watch("email");
   const beforeImageValue = watch("beforeImage");
   const afterImageValue = watch("afterImage");
+
+  const documentTitle = useMemo(() => {
+    const suffix = dispatchNoValue?.trim() || DEFAULT_DISPATCH_PLACEHOLDER;
+    return `Service Report ${suffix}(Dispatch no)`;
+  }, [dispatchNoValue]);
+
+  useDocumentTitle(documentTitle);
 
   const toggleJob = (job: string) => {
     if (lockNonRequiredSections) return;
