@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,19 +23,80 @@ import (
 )
 
 // New configures Gin server with all routes and dependencies.
+func normalizeOrigin(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if !strings.Contains(trimmed, "://") {
+		trimmed = fmt.Sprintf("http://%s", trimmed)
+	}
+	if parsed, err := url.Parse(trimmed); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+	}
+	return trimmed
+}
+
+func makeUploadsCORSMiddleware(allowedOrigins []string, allowAll bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if origin != "" {
+			allowed := allowAll
+			if !allowAll {
+				for _, allowedOrigin := range allowedOrigins {
+					if allowedOrigin == origin {
+						allowed = true
+						break
+					}
+				}
+			}
+			if allowed {
+				headers := c.Writer.Header()
+				headers.Set("Access-Control-Allow-Origin", origin)
+				headers.Set("Access-Control-Allow-Credentials", "true")
+				headers.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+				headers.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+				headers.Add("Vary", "Origin")
+			}
+		}
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
+}
+
 func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
-	r.Static("/uploads", cfg.UploadDir)
+	frontendOrigin := normalizeOrigin(cfg.FrontendURL)
+	allowedOrigins := []string{}
+	if frontendOrigin != "" {
+		allowedOrigins = append(allowedOrigins, frontendOrigin)
+		if strings.Contains(frontendOrigin, "localhost") {
+			allowedOrigins = append(allowedOrigins, strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1))
+		}
+	}
 
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{cfg.FrontendURL},
+	corsConfig := cors.Config{
+		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
-	}))
+	}
+	if len(allowedOrigins) == 0 {
+		corsConfig.AllowOriginFunc = func(_ string) bool { return true }
+	}
+
+	r.Use(cors.New(corsConfig))
+
+	uploadsGroup := r.Group("/uploads")
+	uploadsGroup.Use(makeUploadsCORSMiddleware(allowedOrigins, true))
+	uploadsGroup.StaticFS("/", gin.Dir(cfg.UploadDir, true))
 
 	hasher := bcrypt.New(12)
 	jwtSvc := jwt.New(cfg.JWTSecret, cfg.AccessTokenTTL)

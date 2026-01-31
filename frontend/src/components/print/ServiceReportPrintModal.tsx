@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import logoKms from "../../assets/logo kms.png";
+import watermarkLogo from "../../assets/kms_logo_transparan.png";
 import qrSurvey from "../../assets/qrSurvey.png";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -31,6 +32,8 @@ export type PrintableReport = {
   approvedSignature?: string;
   travelStartTime?: string;
   travelFinishTime?: string;
+  beforeImage?: string;
+  afterImage?: string;
   beforeEvidence?: string[];
   afterEvidence?: string[];
   attachmentPdfUrl?: string;
@@ -95,11 +98,20 @@ export default function ServiceReportPrintModal({
   };
 
 
+  const setCleanPrintMode = (root: HTMLElement | null, enable: boolean) => {
+    if (!root) return;
+    const wrappers: HTMLElement[] = root.classList.contains("print-pages")
+      ? [root]
+      : Array.from(root.querySelectorAll<HTMLElement>(".print-pages"));
+    wrappers.forEach((wrapper) => wrapper.classList.toggle("print-pages--clean", enable));
+  };
+
   const handleDownloadPdf = async () => {
     if (!ready || !printAreaRef.current) return;
     const pages = Array.from(printAreaRef.current.querySelectorAll(".print-preview-page")) as HTMLElement[];
     if (pages.length === 0) return;
     setIsGeneratingPdf(true);
+    setCleanPrintMode(printAreaRef.current, true);
     try {
       const pdf = new jsPDF("portrait", "pt", "a4");
       for (let i = 0; i < pages.length; i += 1) {
@@ -122,6 +134,7 @@ export default function ServiceReportPrintModal({
     } catch (err) {
       console.error("Failed to generate PDF", err);
     } finally {
+      setCleanPrintMode(printAreaRef.current, false);
       setIsGeneratingPdf(false);
     }
   };
@@ -131,21 +144,26 @@ export default function ServiceReportPrintModal({
     if (pages.length === 0) return null;
 
     const pdf = new jsPDF("portrait", "pt", "a4");
-    for (let i = 0; i < pages.length; i += 1) {
-      const canvas = await html2canvas(pages[i], {
-        backgroundColor: "#ffffff",
-        scale: 3,
-        useCORS: false,
-        windowWidth: pages[i].scrollWidth,
-        windowHeight: pages[i].scrollHeight,
-      });
-      const imgData = canvas.toDataURL("image/png", 1.0);
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
-      if (i < pages.length - 1) pdf.addPage();
+    setCleanPrintMode(root, true);
+    try {
+      for (let i = 0; i < pages.length; i += 1) {
+        const canvas = await html2canvas(pages[i], {
+          backgroundColor: "#ffffff",
+          scale: 3,
+          useCORS: true,
+          windowWidth: pages[i].scrollWidth,
+          windowHeight: pages[i].scrollHeight,
+        });
+        const imgData = canvas.toDataURL("image/png", 1.0);
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
+        if (i < pages.length - 1) pdf.addPage();
+      }
+      return pdf.output("arraybuffer");
+    } finally {
+      setCleanPrintMode(root, false);
     }
-    return pdf.output("arraybuffer");
   };
 
   const buildMergedPdfUrl = async (
@@ -160,6 +178,9 @@ export default function ServiceReportPrintModal({
         setMergedPdfError("Failed to prepare report layout for PDF.");
         return null;
       }
+
+      await inlinePortalImages(reportRoot);
+      await waitForImages(reportRoot);
 
       const reportBytes = await generateReportPdfBytes(reportRoot);
       if (!reportBytes) {
@@ -263,6 +284,15 @@ export default function ServiceReportPrintModal({
     const style = existing ?? document.createElement("style");
     style.id = "report-print-style";
     style.innerHTML = `
+      .print-pages--clean .print-preview-page {
+        background-color: #ffffff !important;
+      }
+
+      .print-pages--clean .print-preview-page * {
+        background-color: transparent !important;
+        box-shadow: none !important;
+      }
+
       @page { size: A4 portrait; margin: 0; }
       @media print {
         body { background: #ffffff !important; }
@@ -293,6 +323,12 @@ export default function ServiceReportPrintModal({
           border-radius: 0 !important;
           break-inside: avoid;
           page-break-inside: avoid;
+          background-color: #ffffff !important;
+        }
+
+        .print-preview-page * {
+          background-color: transparent !important;
+          box-shadow: none !important;
         }
       }
       @media screen {
@@ -682,7 +718,7 @@ function PageContainer({
 
   return (
     <div
-      className="print-preview-page mx-auto rounded-[18px] border border-[#c9cfe0] bg-white px-9 py-6"
+      className="print-preview-page relative mx-auto rounded-[18px] border border-[#c9cfe0] bg-white px-9 py-6"
       style={{
         width: "793.7px",
         height: "1122.5px",
@@ -693,6 +729,9 @@ function PageContainer({
         gap: "20px",
       }}
     >
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-15 mix-blend-multiply">
+        <img src={watermarkLogo} alt="Watermark" className="max-h-[65%] max-w-[65%] object-contain" />
+      </div>
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[#e3e6f0] pb-4">
         <div className="flex items-center gap-4">
           <img src={logoKms} alt="PT KMS" className="h-14 w-auto" />
@@ -708,7 +747,7 @@ function PageContainer({
       <div ref={contentOuterRef} className="relative flex-1 overflow-hidden">
         <div
           ref={contentInnerRef}
-          className="space-y-4"
+          className="relative z-10 space-y-4"
           style={{
             transformOrigin: "top left",
             transform: `scale(${scale})`,
@@ -834,8 +873,16 @@ function PrintPageOne({ snapshot, formatDate }: { snapshot: PrintableReport; for
 
 function PrintPageTwo({ snapshot, formatDate }: { snapshot: PrintableReport; formatDate: (value?: string) => string }) {
   const materials = snapshot.spareparts?.length ? snapshot.spareparts : [{ qty: "", partNo: "", description: "", status: "" }];
-  const beforeEvidence = snapshot.beforeEvidence || [];
-  const afterEvidence = snapshot.afterEvidence || [];
+  const beforeEvidence = (snapshot.beforeEvidence && snapshot.beforeEvidence.length > 0
+    ? snapshot.beforeEvidence
+    : snapshot.beforeImage
+    ? [snapshot.beforeImage]
+    : []) as string[];
+  const afterEvidence = (snapshot.afterEvidence && snapshot.afterEvidence.length > 0
+    ? snapshot.afterEvidence
+    : snapshot.afterImage
+    ? [snapshot.afterImage]
+    : []) as string[];
   const evidenceCount = beforeEvidence.length + afterEvidence.length;
   const surveyUrl = "https://docs.google.com/forms/d/e/1FAIpQLSdyNgH3_wVZnAnh-g5AF6g9QYWH-p6TYvAE_nz55DGlqqp8lw/viewform";
 
