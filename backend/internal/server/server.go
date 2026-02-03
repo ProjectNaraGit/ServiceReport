@@ -38,6 +38,32 @@ func normalizeOrigin(raw string) string {
 	return trimmed
 }
 
+func parseFrontendOrigins(raw string) (primary string, origins []string, allowAll bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "*" {
+		return "", nil, true
+	}
+	seen := map[string]struct{}{}
+	for _, token := range strings.Split(raw, ",") {
+		normalized := normalizeOrigin(token)
+		if normalized == "" {
+			continue
+		}
+		if normalized == "*" {
+			return "", nil, true
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		origins = append(origins, normalized)
+		seen[normalized] = struct{}{}
+		if primary == "" {
+			primary = normalized
+		}
+	}
+	return primary, origins, len(origins) == 0
+}
+
 func maybeAddOrigin(origins []string, origin string) []string {
 	if origin == "" {
 		return origins
@@ -84,17 +110,22 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
-	rawFrontend := strings.TrimSpace(cfg.FrontendURL)
-	allowAllOrigins := rawFrontend == "" || rawFrontend == "*"
-	frontendOrigin := normalizeOrigin(rawFrontend)
+	primaryFrontend, baseOrigins, allowAllOrigins := parseFrontendOrigins(cfg.FrontendURL)
+	if primaryFrontend == "" && len(baseOrigins) > 0 {
+		primaryFrontend = baseOrigins[0]
+	}
 	allowedOrigins := []string{}
-	if !allowAllOrigins && frontendOrigin != "" {
-		allowedOrigins = maybeAddOrigin(allowedOrigins, frontendOrigin)
-		if strings.Contains(frontendOrigin, "localhost") {
-			allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1))
-			if strings.Contains(frontendOrigin, ":5173") {
-				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(frontendOrigin, ":5173", ":4173", 1))
-				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1), ":5173", ":4173", 1))
+	if !allowAllOrigins {
+		for _, base := range baseOrigins {
+			allowedOrigins = maybeAddOrigin(allowedOrigins, base)
+			if strings.Contains(base, "localhost") {
+				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(base, "localhost", "127.0.0.1", 1))
+			}
+			if strings.Contains(base, ":5173") {
+				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(base, ":5173", ":4173", 1))
+			}
+			if strings.Contains(base, ":4173") {
+				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(base, ":4173", ":5173", 1))
 			}
 		}
 	}
@@ -129,7 +160,7 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	authSvc := auth.NewService(db, hasher, mailSvc)
-	authHandler := auth.NewHandler(authSvc, jwtSvc, buildCookieConfig(cfg))
+	authHandler := auth.NewHandler(authSvc, jwtSvc, buildCookieConfig(primaryFrontend))
 
 	userSvc := user.NewService(db, hasher, mailSvc)
 	userHandler := user.NewHandler(userSvc)
@@ -196,10 +227,10 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	return r
 }
 
-func buildCookieConfig(cfg *config.Config) auth.CookieConfig {
-	isLocal := strings.Contains(cfg.FrontendURL, "localhost") || strings.Contains(cfg.FrontendURL, "127.0.0.1")
+func buildCookieConfig(frontendURL string) auth.CookieConfig {
+	isLocal := strings.Contains(frontendURL, "localhost") || strings.Contains(frontendURL, "127.0.0.1")
 	domain := ""
-	if parsed, err := url.Parse(cfg.FrontendURL); err == nil && !isLocal {
+	if parsed, err := url.Parse(frontendURL); err == nil && !isLocal {
 		domain = parsed.Hostname()
 	}
 	conf := auth.CookieConfig{
