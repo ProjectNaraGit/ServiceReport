@@ -38,6 +38,18 @@ func normalizeOrigin(raw string) string {
 	return trimmed
 }
 
+func maybeAddOrigin(origins []string, origin string) []string {
+	if origin == "" {
+		return origins
+	}
+	for _, existing := range origins {
+		if existing == origin {
+			return origins
+		}
+	}
+	return append(origins, origin)
+}
+
 func makeUploadsCORSMiddleware(allowedOrigins []string, allowAll bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
@@ -77,9 +89,13 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	frontendOrigin := normalizeOrigin(rawFrontend)
 	allowedOrigins := []string{}
 	if !allowAllOrigins && frontendOrigin != "" {
-		allowedOrigins = append(allowedOrigins, frontendOrigin)
+		allowedOrigins = maybeAddOrigin(allowedOrigins, frontendOrigin)
 		if strings.Contains(frontendOrigin, "localhost") {
-			allowedOrigins = append(allowedOrigins, strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1))
+			allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1))
+			if strings.Contains(frontendOrigin, ":5173") {
+				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(frontendOrigin, ":5173", ":4173", 1))
+				allowedOrigins = maybeAddOrigin(allowedOrigins, strings.Replace(strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1), ":5173", ":4173", 1))
+			}
 		}
 	}
 
