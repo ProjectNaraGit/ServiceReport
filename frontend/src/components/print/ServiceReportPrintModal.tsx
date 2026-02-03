@@ -588,14 +588,14 @@ export default function ServiceReportPrintModal({
             >
               {snapshot?.attachmentPdfUrl ? "Print + Lampiran" : "Print"}
             </button>
-            {/* <button
+            <button
               type="button"
               onClick={handleDownloadPdf}
               disabled={!ready || isGeneratingPdf}
               className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isGeneratingPdf ? "Menyiapkan..." : "Download PDF"}
-            </button> */}
+            </button>
             <button
               type="button"
               onClick={onClose}
