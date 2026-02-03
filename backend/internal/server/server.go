@@ -72,9 +72,11 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
-	frontendOrigin := normalizeOrigin(cfg.FrontendURL)
+	rawFrontend := strings.TrimSpace(cfg.FrontendURL)
+	allowAllOrigins := rawFrontend == "" || rawFrontend == "*"
+	frontendOrigin := normalizeOrigin(rawFrontend)
 	allowedOrigins := []string{}
-	if frontendOrigin != "" {
+	if !allowAllOrigins && frontendOrigin != "" {
 		allowedOrigins = append(allowedOrigins, frontendOrigin)
 		if strings.Contains(frontendOrigin, "localhost") {
 			allowedOrigins = append(allowedOrigins, strings.Replace(frontendOrigin, "localhost", "127.0.0.1", 1))
@@ -88,14 +90,15 @@ func New(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}
-	if len(allowedOrigins) == 0 {
+	if allowAllOrigins || len(allowedOrigins) == 0 {
+		corsConfig.AllowOrigins = []string{}
 		corsConfig.AllowOriginFunc = func(_ string) bool { return true }
 	}
 
 	r.Use(cors.New(corsConfig))
 
 	uploadsGroup := r.Group("/uploads")
-	uploadsGroup.Use(makeUploadsCORSMiddleware(allowedOrigins, true))
+	uploadsGroup.Use(makeUploadsCORSMiddleware(allowedOrigins, allowAllOrigins))
 	uploadsGroup.StaticFS("/", gin.Dir(cfg.UploadDir, true))
 
 	hasher := bcrypt.New(12)
